@@ -2,12 +2,14 @@ import { useEffect, useRef, useState } from 'react';
 import {
   ChevronLeft,
   ChevronRight,
+  FileDown,
   MapPin,
   Maximize2,
   Minimize2,
   Printer,
 } from 'lucide-react';
 import type { DriftVector, PoiRisk } from '../types/geospatial';
+import { downloadPresentationPptx } from '../utils/pptxExport';
 import { formatCoordinates, formatTMin } from '../utils/riskEngine';
 
 interface PresentationViewProps {
@@ -33,6 +35,7 @@ export function PresentationView({
 }: PresentationViewProps) {
   const [slideIndex, setSlideIndex] = useState(0);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [exportingPptx, setExportingPptx] = useState(false);
   const stageRef = useRef<HTMLDivElement>(null);
 
   const totalSlides = SLIDE_TITLES.length;
@@ -88,6 +91,23 @@ export function PresentationView({
         </div>
 
         <div className="flex items-center gap-2">
+          <button
+            type="button"
+            disabled={exportingPptx}
+            onClick={async () => {
+              setExportingPptx(true);
+              try {
+                await downloadPresentationPptx(pois, vectors);
+              } finally {
+                setExportingPptx(false);
+              }
+            }}
+            className="inline-flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-60 transition-colors cursor-pointer"
+          >
+            <FileDown className="h-3.5 w-3.5" aria-hidden="true" />
+            <span>{exportingPptx ? 'Generating .pptx...' : 'Download .pptx'}</span>
+          </button>
+
           <button
             type="button"
             onClick={() => window.print()}
