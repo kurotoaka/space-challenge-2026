@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronRight, Columns2, PanelLeftClose, PanelLeftOpen, SlidersHorizontal } from 'lucide-react';
+import { Columns2, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { useState } from 'react';
 import { ERG_REGIONS } from '../data/ergRegions';
 import type {
@@ -8,7 +8,6 @@ import type {
   LayerToggles,
   PoiRisk,
   RiskTier,
-  WindForcing,
 } from '../types/geospatial';
 import { formatTMin } from '../utils/riskEngine';
 
@@ -21,9 +20,6 @@ interface ControlSidebarProps {
   onChangeBaseMap: (next: BaseMapStyle) => void;
   riskFilter: 'All' | RiskTier;
   onChangeRiskFilter: (filter: 'All' | RiskTier) => void;
-  wind: WindForcing;
-  onChangeWind: (next: WindForcing) => void;
-  onResetWind: () => void;
   pois: PoiRisk[];
   totalPois: PoiRisk[];
   selectedPoiId: string | null;
@@ -38,11 +34,6 @@ const RISK_OPTIONS: Array<{ id: 'All' | RiskTier; label: string }> = [
   { id: 'Med', label: 'Med' },
   { id: 'Low', label: 'Low' },
 ];
-
-function getCompassCardinal(deg: number): string {
-  const dirs = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
-  return dirs[Math.round(((deg % 360) / 45)) % 8];
-}
 
 function getRiskColorClass(tier: RiskTier): string {
   if (tier === 'High') return 'text-rose-400';
@@ -65,9 +56,6 @@ export function ControlSidebar({
   onChangeBaseMap,
   riskFilter,
   onChangeRiskFilter,
-  wind,
-  onChangeWind,
-  onResetWind,
   pois,
   totalPois,
   selectedPoiId,
@@ -76,7 +64,6 @@ export function ControlSidebar({
   sourceMode,
 }: ControlSidebarProps) {
   const [collapsed, setCollapsed] = useState(false);
-  const [windExpanded, setWindExpanded] = useState(false);
 
   const highCount = totalPois.filter((p) => p.collision_risk === 'High').length;
   const medCount = totalPois.filter((p) => p.collision_risk === 'Med').length;
@@ -208,25 +195,13 @@ export function ControlSidebar({
               type="button"
               onClick={() => onChangeBaseMap('sar')}
               aria-pressed={baseMap === 'sar'}
-              className={`px-1.5 py-0.5 rounded transition-colors cursor-pointer ${
+              className={`px-2 py-0.5 rounded transition-colors cursor-pointer ${
                 baseMap === 'sar'
                   ? 'bg-cyan-400 text-slate-950 font-semibold'
                   : 'text-slate-400 hover:text-slate-200'
               }`}
             >
               SAR Radar
-            </button>
-            <button
-              type="button"
-              onClick={() => onChangeBaseMap('dark')}
-              aria-pressed={baseMap === 'dark'}
-              className={`px-1.5 py-0.5 rounded transition-colors cursor-pointer ${
-                baseMap === 'dark'
-                  ? 'bg-slate-700 text-slate-50 font-semibold'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              Dark
             </button>
           </div>
         </div>
@@ -259,102 +234,6 @@ export function ControlSidebar({
             );
           })}
         </div>
-      </div>
-
-      {/* Collapsible Wind Forcing Controls */}
-      <div className="border-b border-slate-800/80">
-        <div className="px-4 py-2.5 flex items-center justify-between">
-          <button
-            type="button"
-            onClick={() => setWindExpanded((v) => !v)}
-            aria-expanded={windExpanded}
-            className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-200 hover:text-cyan-300 transition-colors cursor-pointer"
-          >
-            {windExpanded ? (
-              <ChevronDown className="h-3.5 w-3.5 text-slate-400" aria-hidden="true" />
-            ) : (
-              <ChevronRight className="h-3.5 w-3.5 text-slate-400" aria-hidden="true" />
-            )}
-            <SlidersHorizontal className="h-3 w-3 text-cyan-400" aria-hidden="true" />
-            <span>
-              Wind: {wind.speed_kt} kt · {wind.azimuth_deg}° {getCompassCardinal(wind.azimuth_deg)}
-            </span>
-          </button>
-          <button
-            type="button"
-            onClick={onResetWind}
-            className="text-[10px] font-medium text-cyan-400 hover:text-cyan-300 cursor-pointer"
-          >
-            Reset
-          </button>
-        </div>
-
-        {windExpanded && (
-          <div className="px-4 pb-3 space-y-2.5 border-t border-slate-800/60 pt-2.5">
-            <div>
-              <div className="flex justify-between text-[11px]">
-                <label htmlFor="wind-speed-slider" className="text-slate-400">
-                  Wind Speed
-                </label>
-                <span className="font-mono font-semibold tabular-nums text-slate-100">
-                  {wind.speed_kt} kt
-                </span>
-              </div>
-              <input
-                id="wind-speed-slider"
-                type="range"
-                min={5}
-                max={40}
-                step={1}
-                value={wind.speed_kt}
-                onChange={(e) => onChangeWind({ ...wind, speed_kt: Number(e.target.value) })}
-                className="mt-1 w-full accent-cyan-400 cursor-pointer"
-              />
-            </div>
-
-            <div>
-              <div className="flex justify-between text-[11px]">
-                <label htmlFor="wind-azimuth-slider" className="text-slate-400">
-                  Transport Bearing
-                </label>
-                <span className="font-mono font-semibold tabular-nums text-slate-100">
-                  {wind.azimuth_deg}° {getCompassCardinal(wind.azimuth_deg)}
-                </span>
-              </div>
-              <input
-                id="wind-azimuth-slider"
-                type="range"
-                min={0}
-                max={355}
-                step={5}
-                value={wind.azimuth_deg}
-                onChange={(e) => onChangeWind({ ...wind, azimuth_deg: Number(e.target.value) })}
-                className="mt-1 w-full accent-cyan-400 cursor-pointer"
-              />
-            </div>
-
-            <div>
-              <div className="flex justify-between text-[11px]">
-                <label htmlFor="horizon-slider" className="text-slate-400">
-                  Projection Horizon
-                </label>
-                <span className="font-mono font-semibold tabular-nums text-slate-100">
-                  {wind.horizon_years} yrs
-                </span>
-              </div>
-              <input
-                id="horizon-slider"
-                type="range"
-                min={2}
-                max={25}
-                step={1}
-                value={wind.horizon_years}
-                onChange={(e) => onChangeWind({ ...wind, horizon_years: Number(e.target.value) })}
-                className="mt-1 w-full accent-cyan-400 cursor-pointer"
-              />
-            </div>
-          </div>
-        )}
       </div>
 
       {/* POI Risk Watchlist */}

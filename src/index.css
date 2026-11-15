@@ -24,9 +24,13 @@
   font-family: var(--font-sans);
 }
 
-/* Subtle moody grading on Esri World Imagery so actual desert dunes pop cleanly under dark overlays */
+/* Crisp natural Esri World Imagery without dark-mode dimness, plus grayscale L-band SAR mode */
 .dunemarch-sat-tiles img {
-  filter: brightness(0.62) contrast(1.18) saturate(0.75);
+  filter: brightness(0.86) contrast(1.08) saturate(0.95);
+}
+
+.dunemarch-sar-tiles img {
+  filter: grayscale(1) brightness(0.56) contrast(1.26);
 }
 
 .dunemarch-popup .leaflet-popup-content-wrapper {
@@ -124,6 +128,62 @@
 }
 ::-webkit-scrollbar-thumb:hover {
   background: #334155;
+}
+
+/* Precision aerospace range slider for Wind Forcing & telemetry docks */
+.dunemarch-range {
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  margin: 0;
+}
+
+.dunemarch-range:focus {
+  outline: none;
+}
+
+.dunemarch-range::-webkit-slider-runnable-track {
+  height: 6px;
+  background: transparent;
+  border-radius: 9999px;
+}
+
+.dunemarch-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  margin-top: -4px;
+  border-radius: 9999px;
+  background: #22d3ee;
+  border: 2px solid #090d14;
+  box-shadow: 0 0 0 1px rgba(34, 211, 238, 0.55), 0 2px 6px rgba(0, 0, 0, 0.7);
+  transition: transform 0.12s ease, box-shadow 0.12s ease, background-color 0.12s ease;
+  cursor: pointer;
+}
+
+.dunemarch-range:hover::-webkit-slider-thumb,
+.dunemarch-range:focus-visible::-webkit-slider-thumb {
+  background: #67e8f9;
+  transform: scale(1.12);
+  box-shadow: 0 0 0 3px rgba(34, 211, 238, 0.25), 0 2px 8px rgba(0, 0, 0, 0.8);
+}
+
+.dunemarch-range::-moz-range-track {
+  height: 6px;
+  background: transparent;
+  border-radius: 9999px;
+}
+
+.dunemarch-range::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 9999px;
+  background: #22d3ee;
+  border: 2px solid #090d14;
+  box-shadow: 0 0 0 1px rgba(34, 211, 238, 0.55), 0 2px 6px rgba(0, 0, 0, 0.7);
+  transition: transform 0.12s ease, box-shadow 0.12s ease, background-color 0.12s ease;
+  cursor: pointer;
 }
 
 @media print {

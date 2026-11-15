@@ -445,6 +445,8 @@ export function computeOnTheGoSpotComparison(params: {
   azimuthDeg: number;
   erg?: ErgRegion | null;
   elapsedYears: number;
+  beforeOffsetYears?: number;
+  temporalSeeds?: [number, number];
 }): SpotSarAnalysis {
   const t0 = typeof performance !== 'undefined' ? performance.now() : Date.now();
   const size = 128;
@@ -452,7 +454,9 @@ export function computeOnTheGoSpotComparison(params: {
   const patchSpanM = size * pixelSpacingM; // 512 m × 512 m
   const ergId = params.erg?.id ?? 'al-jafurah';
 
-  const targetShiftM = params.speedMYr * params.elapsedYears;
+  const beforeShiftM = params.speedMYr * (params.beforeOffsetYears ?? 0);
+  const afterShiftM = beforeShiftM + params.speedMYr * params.elapsedYears;
+  const [seedBefore, seedAfter] = params.temporalSeeds ?? [1.0, 2.7];
 
   const fftBefore = synthesizeGeoSarGrid({
     lat: params.lat,
@@ -462,9 +466,9 @@ export function computeOnTheGoSpotComparison(params: {
     spanXM: patchSpanM,
     spanYM: patchSpanM,
     azimuthDeg: params.azimuthDeg,
-    shiftMeters: 0,
+    shiftMeters: beforeShiftM,
     ergId,
-    temporalNoiseSeed: 1.0,
+    temporalNoiseSeed: seedBefore,
   });
 
   const fftAfter = synthesizeGeoSarGrid({
@@ -475,9 +479,9 @@ export function computeOnTheGoSpotComparison(params: {
     spanXM: patchSpanM,
     spanYM: patchSpanM,
     azimuthDeg: params.azimuthDeg,
-    shiftMeters: targetShiftM,
+    shiftMeters: afterShiftM,
     ergId,
-    temporalNoiseSeed: 2.7,
+    temporalNoiseSeed: seedAfter,
   });
 
   const fft = measurePatchDrift2dFft(
@@ -501,9 +505,9 @@ export function computeOnTheGoSpotComparison(params: {
     spanXM,
     spanYM,
     azimuthDeg: params.azimuthDeg,
-    shiftMeters: 0,
+    shiftMeters: beforeShiftM,
     ergId,
-    temporalNoiseSeed: 1.0,
+    temporalNoiseSeed: seedBefore,
   });
 
   const visAfter = synthesizeGeoSarGrid({
@@ -514,9 +518,9 @@ export function computeOnTheGoSpotComparison(params: {
     spanXM,
     spanYM,
     azimuthDeg: params.azimuthDeg,
-    shiftMeters: targetShiftM,
+    shiftMeters: afterShiftM,
     ergId,
-    temporalNoiseSeed: 2.7,
+    temporalNoiseSeed: seedAfter,
   });
 
   const t1 = typeof performance !== 'undefined' ? performance.now() : Date.now();

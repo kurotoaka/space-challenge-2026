@@ -8,7 +8,7 @@ export type DataSourceMode = 'fastapi' | 'local_model';
 
 export type ErgZoneName = "Rub' al Khali" | 'Al-Jafurah' | 'Ad-Dahna' | 'An-Nafud';
 
-export type BaseMapStyle = 'satellite' | 'sar' | 'dark';
+export type BaseMapStyle = 'satellite' | 'sar';
 
 export interface LayerToggles {
   heatmap: boolean;

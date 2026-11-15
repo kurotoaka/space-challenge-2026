@@ -32,14 +32,21 @@ test('generateCalibratedDriftField produces high-res grid across all 4 Saudi erg
   }
 });
 
-test('all 4 Erg region polygons are closed and contain their regional centers', () => {
+test('all 4 Erg region polygons are closed, inside KSA border, and contain their regional centers', () => {
   assert.equal(ERG_REGIONS.length, 4);
   for (const erg of ERG_REGIONS) {
     assert.deepEqual(erg.polygon[0], erg.polygon[erg.polygon.length - 1]);
+    assert.ok(erg.polygon.length >= 25, `Expected detailed polygon for ${erg.name}`);
     assert.ok(
       isPointInPolygon(erg.center[0], erg.center[1], erg.polygon),
       `Center for ${erg.name} should lie inside its polygon`
     );
+    for (const [lon, lat] of erg.polygon) {
+      assert.ok(
+        isPointInPolygon(lat, lon, SAUDI_BORDER_RING),
+        `Vertex [${lon}, ${lat}] of ${erg.name} must stay inside Saudi Arabia border`
+      );
+    }
   }
 });
 
@@ -102,7 +109,7 @@ test('evaluatePoiRisks calculates T-min, wind influence, and High/Med/Low tiers 
   const baseVectors = generateCalibratedDriftField();
   const baseline = evaluatePoiRisks(baseVectors, DEFAULT_WIND_FORCING);
 
-  assert.equal(baseline.length, 10);
+  assert.equal(baseline.length, 20);
   const shaybah = baseline.find((p) => p.id === 'poi-shaybah');
   assert.ok(shaybah, 'Shaybah POI should exist');
   assert.equal(shaybah.collision_risk, 'High');
@@ -198,6 +205,27 @@ test('2D FFT spot comparison stays invariant when normalizing across bridged out
     Math.abs(cumul255d.measuredSpeedMYr - 21.4) < 5.0,
     `Expected 255d cumulative speed near 21.4 m/yr, got ${cumul255d.measuredSpeedMYr}`
   );
+
+  // Arbitrary mid-mission date pair (e.g., T+120d before -> T+327d after, 207d interval)
+  const customPair = computeOnTheGoSpotComparison({
+    lat: 25.48,
+    lon: 49.38,
+    speedMYr: 21.4,
+    azimuthDeg: 158,
+    erg: jafurah,
+    beforeOffsetYears: 120 / 365.25,
+    elapsedYears: 207 / 365.25,
+    temporalSeeds: [3.2, 11.7],
+  });
+  const expectedShift207d = (21.4 * 207) / 365.25;
+  assert.ok(
+    Math.abs(customPair.measuredShiftM - expectedShift207d) < 3.5,
+    `Expected ~${expectedShift207d.toFixed(1)}m shift for 207d date pair, got ${customPair.measuredShiftM}m`
+  );
+  assert.ok(
+    Math.abs(customPair.measuredSpeedMYr - 21.4) < 4.5,
+    `Expected ~21.4 m/yr for 207d date pair, got ${customPair.measuredSpeedMYr}`
+  );
 });
 
 test('GeoJSON mask rings are properly closed with world outer ring and KSA inner hole', () => {
@@ -218,7 +246,7 @@ test('formatters and CSV export produce clean tabular strings', () => {
   const pois = evaluatePoiRisks(generateCalibratedDriftField());
   const csv = exportPoisToCsv(pois);
   const lines = csv.split('\n');
-  assert.equal(lines.length, 11);
+  assert.equal(lines.length, 21);
   assert.ok(lines[0].includes('Encroachment Risk'));
   assert.ok(lines[0].includes('Perimeter Breach ETA'));
 });

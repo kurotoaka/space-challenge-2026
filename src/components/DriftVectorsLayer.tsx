@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import L from 'leaflet';
 import { useMap } from 'react-leaflet';
 import type { DriftVector, ErgZoneName } from '../types/geospatial';
@@ -17,14 +17,22 @@ function getStrokeColor(speed: number): string {
 
 /**
  * High-DPI Canvas directional vector field overlay.
- * Renders crisp 1.15px micro-arrows without bulky DOM polylines, automatically thinning
- * dense points at continental zoom and revealing full sub-erg detail when zoomed in.
+ * Uses O(1) spatial cell occupancy and persistent layer refs so zooming and scrubbing
+ * wind sliders trigger rAF redraws without Leaflet layer teardown.
  */
 export function DriftVectorsLayer({ vectors, visible, selectedErg }: DriftVectorsLayerProps) {
   const map = useMap();
+  const vectorsRef = useRef(vectors);
+  const visibleRef = useRef(visible);
+  const selectedErgRef = useRef(selectedErg);
+  const redrawRef = useRef<(() => void) | null>(null);
+
+  vectorsRef.current = vectors;
+  visibleRef.current = visible;
+  selectedErgRef.current = selectedErg;
 
   useEffect(() => {
-    if (!visible || vectors.length === 0) return;
+    let rafId: number | null = null;
 
     const VectorFieldOverlay = L.Layer.extend({
       onAdd(targetMap: L.Map) {
@@ -37,20 +45,34 @@ export function DriftVectorsLayer({ vectors, visible, selectedErg }: DriftVector
         this._canvas = canvas;
 
         targetMap.getPanes().overlayPane.appendChild(canvas);
-        targetMap.on('moveend zoomend resize', this._draw, this);
+        targetMap.on('moveend zoomend resize', this._scheduleDraw, this);
         this._draw();
         return this;
       },
 
       onRemove(targetMap: L.Map) {
-        targetMap.off('moveend zoomend resize', this._draw, this);
+        if (rafId !== null) {
+          cancelAnimationFrame(rafId);
+          rafId = null;
+        }
+        targetMap.off('moveend zoomend resize', this._scheduleDraw, this);
         if (this._canvas && this._canvas.parentNode) {
           this._canvas.parentNode.removeChild(this._canvas);
         }
       },
 
+      _scheduleDraw() {
+        if (rafId !== null) {
+          cancelAnimationFrame(rafId);
+        }
+        rafId = requestAnimationFrame(() => {
+          rafId = null;
+          this._draw();
+        });
+      },
+
       _draw() {
-        const canvas: HTMLCanvasElement = this._canvas;
+        const canvas: HTMLCanvasElement | undefined = this._canvas;
         if (!canvas) return;
         const size = map.getSize();
         if (size.x === 0 || size.y === 0) return;
@@ -59,48 +81,73 @@ export function DriftVectorsLayer({ vectors, visible, selectedErg }: DriftVector
         L.DomUtil.setPosition(canvas, topLeft);
 
         const dpr = Math.min(window.devicePixelRatio || 1, 2);
-        canvas.width = Math.round(size.x * dpr);
-        canvas.height = Math.round(size.y * dpr);
-        canvas.style.width = `${size.x}px`;
-        canvas.style.height = `${size.y}px`;
+        const targetW = Math.round(size.x * dpr);
+        const targetH = Math.round(size.y * dpr);
+        if (canvas.width !== targetW || canvas.height !== targetH) {
+          canvas.width = targetW;
+          canvas.height = targetH;
+          canvas.style.width = `${size.x}px`;
+          canvas.style.height = `${size.y}px`;
+        }
 
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
         ctx.clearRect(0, 0, size.x, size.y);
 
+        const curVectors = vectorsRef.current;
+        const curVisible = visibleRef.current;
+        const curErg = selectedErgRef.current;
+        if (!curVisible || curVectors.length === 0) return;
+
         const zoom = map.getZoom();
-        // Minimum screen-space separation prevents cluttered overlapping arrows
         const minGapPx = zoom >= 8 ? 16 : zoom >= 7 ? 20 : 24;
+        const occupied = new Map<number, Array<[number, number]>>();
         const minGapSq = minGapPx * minGapPx;
-        const placed: Array<[number, number]> = [];
+        const gridCols = Math.ceil((size.x + 60) / minGapPx) + 2;
 
         ctx.lineCap = 'round';
         ctx.lineJoin = 'round';
         ctx.lineWidth = zoom >= 8 ? 1.3 : 1.1;
 
-        for (const vec of vectors) {
-          if (selectedErg !== 'All' && vec.erg_zone !== selectedErg) {
-            continue;
-          }
+        for (let idx = 0; idx < curVectors.length; idx++) {
+          const vec = curVectors[idx];
+          if (curErg !== 'All' && vec.erg_zone !== curErg) continue;
+
           const pt = map.latLngToContainerPoint([vec.lat, vec.lon]);
           if (pt.x < -20 || pt.y < -20 || pt.x > size.x + 20 || pt.y > size.y + 20) {
             continue;
           }
 
+          const cx = Math.floor((pt.x + 20) / minGapPx) + 1;
+          const cy = Math.floor((pt.y + 20) / minGapPx) + 1;
           let tooClose = false;
-          for (let i = 0; i < placed.length; i++) {
-            const dx = pt.x - placed[i][0];
-            const dy = pt.y - placed[i][1];
-            if (dx * dx + dy * dy < minGapSq) {
-              tooClose = true;
-              break;
+
+          for (let dy = -1; dy <= 1 && !tooClose; dy++) {
+            for (let dx = -1; dx <= 1; dx++) {
+              const cell = occupied.get((cy + dy) * gridCols + (cx + dx));
+              if (!cell) continue;
+              for (let k = 0; k < cell.length; k++) {
+                const vx = pt.x - cell[k][0];
+                const vy = pt.y - cell[k][1];
+                if (vx * vx + vy * vy < minGapSq) {
+                  tooClose = true;
+                  break;
+                }
+              }
+              if (tooClose) break;
             }
           }
           if (tooClose) continue;
-          placed.push([pt.x, pt.y]);
 
-          // Crisp micro-vector length in pixels scaled cleanly by speed & zoom
+          const key = cy * gridCols + cx;
+          let bucket = occupied.get(key);
+          if (!bucket) {
+            bucket = [];
+            occupied.set(key, bucket);
+          }
+          bucket.push([pt.x, pt.y]);
+
           const lenPx = Math.max(9, Math.min(22, 6 + vec.speed_m_yr * 0.45 + (zoom - 6) * 2.2));
           const rad = (vec.azimuth_deg * Math.PI) / 180;
           const sinA = Math.sin(rad);
@@ -127,12 +174,18 @@ export function DriftVectorsLayer({ vectors, visible, selectedErg }: DriftVector
       },
     });
 
-    const layer = new (VectorFieldOverlay as unknown as new () => L.Layer)();
+    const layer = new (VectorFieldOverlay as unknown as new () => L.Layer & { _scheduleDraw: () => void })();
+    redrawRef.current = () => layer._scheduleDraw();
     layer.addTo(map);
     return () => {
+      redrawRef.current = null;
       map.removeLayer(layer);
     };
-  }, [map, vectors, visible, selectedErg]);
+  }, [map]);
+
+  useEffect(() => {
+    redrawRef.current?.();
+  }, [vectors, visible, selectedErg]);
 
   return null;
 }

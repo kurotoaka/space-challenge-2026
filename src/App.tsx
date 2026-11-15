@@ -192,9 +192,6 @@ export default function App() {
             onChangeBaseMap={setBaseMap}
             riskFilter={riskFilter}
             onChangeRiskFilter={setRiskFilter}
-            wind={wind}
-            onChangeWind={setWind}
-            onResetWind={() => setWind(DEFAULT_WIND_FORCING)}
             pois={filteredPois}
             totalPois={pois}
             selectedPoiId={selectedPoiId}
@@ -235,6 +232,9 @@ export default function App() {
                   pois.find((p) => p.id === selectedPoiId) ?? null
                 )
               }
+              wind={wind}
+              onChangeWind={setWind}
+              onResetWind={() => setWind(DEFAULT_WIND_FORCING)}
             />
           </main>
         </div>
@@ -248,6 +248,7 @@ export default function App() {
         <PresentationView
           pois={pois}
           vectors={vectors}
+          baseVectors={INITIAL_BASE_VECTORS}
           onOpenLiveMap={() => setActiveView('map')}
         />
       )}
