@@ -9,17 +9,17 @@ interface BackendGuideViewProps {
   onUpdateApiUrl: (nextUrl: string) => void;
 }
 
-const UBUNTU_COMMANDS = `# 1. On AWS EC2 t3.2xlarge (Ubuntu, Python 3.14, 8 vCPUs, 32GB RAM, 30GB disk)
-cd backend
-python3.14 -m venv .venv && source .venv/bin/activate
-pip install --upgrade pip && pip install -r requirements.txt
+const UBUNTU_COMMANDS = `# 1. Activate existing venv in space-challenge/ and install Python dependencies
+cd ~/space-challenge
+source venv/bin/activate
+pip install --upgrade pip && pip install -r backend/requirements.txt
 
-# 2. Export NASA Earthdata bearer token (never writes large HDF5 granules to disk)
+# 2. Export NASA Earthdata bearer token (streams subsets in memory, zero large disk writes)
 export EARTHDATA_TOKEN="your_earthdata_bearer_token"
 
-# 3. Launch FastAPI backend + React frontend simultaneously
-uvicorn main:app --host 0.0.0.0 --port 8000 --workers 1 &
-cd .. && npm install && VITE_API_BASE_URL=http://localhost:8000 npm run dev`;
+# 3. Launch FastAPI backend + React frontend simultaneously from space-challenge/
+uvicorn main:app --app-dir backend --host 0.0.0.0 --port 8000 --workers 1 &
+npm install && VITE_API_BASE_URL=http://localhost:8000 npm run dev`;
 
 export function BackendGuideView({
   apiBaseUrl,
