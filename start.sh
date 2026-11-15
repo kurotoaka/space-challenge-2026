@@ -30,11 +30,20 @@ cleanup() {
 }
 trap cleanup INT TERM EXIT
 
-sleep 2
-if curl -fsS http://localhost:8000/api/health >/dev/null 2>&1; then
+HEALTHY=0
+for _ in $(seq 1 10); do
+  if curl -fsS http://localhost:8000/api/health >/dev/null 2>&1; then
+    HEALTHY=1
+    break
+  fi
+  sleep 1
+done
+
+if [ "$HEALTHY" -eq 1 ]; then
   echo "FastAPI healthy on http://localhost:8000"
 else
-  echo "Warning: FastAPI failed health check; see uvicorn.log"
+  echo "Warning: FastAPI failed health check; last lines of uvicorn.log:"
+  tail -n 20 uvicorn.log || true
 fi
 
 # Start React Vite dev server on port 3000

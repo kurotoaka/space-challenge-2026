@@ -33,6 +33,16 @@ NISAR_SHORT_NAMES: tuple[str, ...] = (
 )
 SCIENCE_PHASE_START = "2025-11-28T00:00:00Z"
 
+_PIPELINE_STATUS: dict[str, Any] = {
+    "stage": "init",
+    "detail": "Not started yet.",
+    "selected_pair": None,
+}
+
+
+def get_pipeline_status() -> dict[str, Any]:
+    return dict(_PIPELINE_STATUS)
+
 
 @dataclass(slots=True)
 class DriftVector:
@@ -282,13 +292,16 @@ def _extract_granule_datetime(granule: Any) -> datetime | None:
 
 
 def _extract_track_frame(granule: Any) -> str | None:
-    """Extract NISAR `<track>_<dir>_<frame>` identifier so repeat-pass pairs share geometry."""
+    """Extract NISAR `<track>_<dir>_<frame>_<bw>` so repeat-pass pairs share exact grid spacing."""
     try:
         meta = granule.get("meta", {}) if isinstance(granule, dict) else {}
         native_id = str(meta.get("native-id", ""))
-        m = re.search(r"NISAR_L2_PR_GSLC_\d{3}_(\d{3}_[AD]_\d{3})", native_id)
+        m = re.search(r"NISAR_L2_PR_GSLC_\d{3}_(\d{3}_[AD]_\d{3}_\d{4})", native_id)
         if m:
             return m.group(1)
+        m2 = re.search(r"NISAR_L2_PR_GSLC_\d{3}_(\d{3}_[AD]_\d{3})", native_id)
+        if m2:
+            return m2.group(1)
     except Exception:
         pass
     return None
@@ -296,7 +309,7 @@ def _extract_track_frame(granule: Any) -> str | None:
 
 def _select_valid_granule_pair(granules: list[Any]) -> tuple[Any, Any, float, bool]:
     """
-    Pick two chronologically ordered repeat-pass granules on the same Track/Frame
+    Pick two chronologically ordered repeat-pass granules on the same Track/Frame/Bandwidth
     separated by at least 6 days. Computes exact `delta_days` so bridged outages
     (such as NASA's Jul 27 - Aug 10, 2026 gap) divide by real elapsed days rather than
     assuming a fixed 12-day interval.
@@ -310,7 +323,7 @@ def _select_valid_granule_pair(granules: list[Any]) -> tuple[Any, Any, float, bo
     if len(stamped) < 2:
         return granules[0], granules[1], 12.0, False
 
-    # Prefer pairing scenes with identical Track_Dir_Frame for spatial overlap
+    # Prefer pairing scenes with identical Track_Dir_Frame_BW for exact grid overlap
     by_frame: dict[str, list[tuple[datetime, Any]]] = {}
     for dt, tf, g in stamped:
         if tf:
@@ -337,9 +350,18 @@ def _select_valid_granule_pair(granules: list[Any]) -> tuple[Any, Any, float, bo
     return g0, g1, round(delta_days, 3), delta_days > 14.5
 
 
+def _pick_science_h5_handle(opened_files: list[Any], fallback_idx: int) -> Any:
+    """Pick the primary GSLC science .h5 file handle (skipping _QA_STATS.h5 or auxiliary files)."""
+    for f in opened_files:
+        name = str(getattr(f, "path", None) or getattr(f, "full_name", None) or f)
+        if name.endswith(".h5") and "_QA_STATS" not in name:
+            return f
+    return opened_files[fallback_idx]
+
+
 def fetch_nisar_ksa_vectors(
     subset_bbox: tuple[float, float, float, float] = (49.5, 19.5, 54.8, 23.5),
-    max_granules: int = 24,
+    max_granules: int = 30,
 ) -> list[DriftVector]:
     """
     Search NASA Earthdata via `earthaccess` for NISAR Level-2 GSLC scenes intersecting Saudi Arabia
@@ -348,6 +370,9 @@ def fetch_nisar_ksa_vectors(
     """
     token = os.getenv("EARTHDATA_TOKEN")
     if not token:
+        _PIPELINE_STATUS.update(
+            {"stage": "fallback", "detail": "EARTHDATA_TOKEN not set; using calibrated SAR model.", "selected_pair": None}
+        )
         logger.info("EARTHDATA_TOKEN not set; using calibrated KSA aeolian SAR drift field.")
         return generate_calibrated_ksa_drift_field()
 
@@ -357,6 +382,9 @@ def fetch_nisar_ksa_vectors(
 
         auth = earthaccess.login(strategy="environment")
         if not auth.authenticated:
+            _PIPELINE_STATUS.update(
+                {"stage": "auth_failed", "detail": "Earthdata login returned unauthenticated.", "selected_pair": None}
+            )
             logger.warning("Earthdata login failed; falling back to calibrated drift field.")
             return generate_calibrated_ksa_drift_field()
 
@@ -368,7 +396,7 @@ def fetch_nisar_ksa_vectors(
                     short_name=short_name,
                     bounding_box=subset_bbox,
                     temporal=(SCIENCE_PHASE_START, now_iso),
-                    count=max(max_granules // 2, 10),
+                    count=max(max_granules // 2, 15),
                 )
             )
 
@@ -378,29 +406,40 @@ def fetch_nisar_ksa_vectors(
                     short_name="NISAR_L2_GSLC_BETA_V1",
                     bounding_box=KSA_BBOX,
                     temporal=(SCIENCE_PHASE_START, now_iso),
-                    count=10,
+                    count=15,
                 )
             )
 
         if len(granules) < 2:
+            _PIPELINE_STATUS.update(
+                {"stage": "insufficient_granules", "detail": f"Only {len(granules)} granules found.", "selected_pair": None}
+            )
             logger.info("Fewer than 2 NISAR L2 GSLC granules found; using calibrated drift field.")
             return generate_calibrated_ksa_drift_field()
 
         g0, g1, delta_days, gap_bridged = _select_valid_granule_pair(granules)
+        id0 = g0.get("meta", {}).get("native-id") or g0["meta"]["concept-id"]
+        id1 = g1.get("meta", {}).get("native-id") or g1["meta"]["concept-id"]
+        pair_label = f"{id0} -> {id1} ({delta_days:.1f}d{' gap-bridged' if gap_bridged else ''})"
 
-        # Stream virtual file handles directly (zero large-file disk download)
-        remote_files = earthaccess.open([g0, g1])
+        # Open each granule separately so multiple links inside a granule don't shift [0]/[1] indexing
+        files_0 = earthaccess.open([g0])
+        files_1 = earthaccess.open([g1])
+        h0 = _pick_science_h5_handle(files_0, 0)
+        h1 = _pick_science_h5_handle(files_1, 0)
+
+        # Use chunks="auto" since NISAR GSLC uses (yCoordinates, xCoordinates), not (y, x)
         ds_t0 = xr.open_dataset(
-            remote_files[0],
+            h0,
             engine="h5netcdf",
             group="/science/LSAR/GSLC/grids/frequencyA",
-            chunks={"y": 1024, "x": 1024},
+            chunks="auto",
         )
         ds_t1 = xr.open_dataset(
-            remote_files[1],
+            h1,
             engine="h5netcdf",
             group="/science/LSAR/GSLC/grids/frequencyA",
-            chunks={"y": 1024, "x": 1024},
+            chunks="auto",
         )
 
         gap_tag = f" ({delta_days:.1f}d gap-bridged)" if gap_bridged else f" ({delta_days:.1f}d)"
@@ -413,9 +452,33 @@ def fetch_nisar_ksa_vectors(
             scene_pair=scene_pair,
             delta_days=delta_days,
         )
-        return vectors if vectors else generate_calibrated_ksa_drift_field()
+        if vectors:
+            _PIPELINE_STATUS.update(
+                {
+                    "stage": "live_nisar_fft",
+                    "detail": f"Streamed {len(vectors)} real NISAR Dask FFT vectors.",
+                    "selected_pair": pair_label,
+                }
+            )
+            return vectors
+
+        _PIPELINE_STATUS.update(
+            {
+                "stage": "empty_overlap_fallback",
+                "detail": "Opened HDF5 pair, but 0 valid Dask FFT patches overlapped subset_bbox with SNR >= 3.5.",
+                "selected_pair": pair_label,
+            }
+        )
+        return generate_calibrated_ksa_drift_field()
 
     except Exception as exc:
+        _PIPELINE_STATUS.update(
+            {
+                "stage": "error_fallback",
+                "detail": f"{type(exc).__name__}: {exc}",
+                "selected_pair": None,
+            }
+        )
         logger.warning("NISAR streaming pipeline unavailable (%s); using calibrated fallback.", exc)
         return generate_calibrated_ksa_drift_field()
 

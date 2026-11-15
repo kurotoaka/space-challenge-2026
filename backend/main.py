@@ -6,6 +6,7 @@ Python 3.14 | Serves SAR dune drift velocity vectors and wind-adjusted POI risk 
 from __future__ import annotations
 
 import os
+import threading
 from contextlib import asynccontextmanager
 from typing import Any
 
@@ -14,7 +15,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from db_manager import WindForcing, evaluate_poi_risks, init_db
-from engine import fetch_nisar_ksa_vectors, vectors_to_dicts
+from engine import (
+    fetch_nisar_ksa_vectors,
+    generate_calibrated_ksa_drift_field,
+    get_pipeline_status,
+    vectors_to_dicts,
+)
 
 
 class SimulationRequest(BaseModel):
@@ -26,10 +32,18 @@ class SimulationRequest(BaseModel):
 _STATE: dict[str, Any] = {"vectors": []}
 
 
+def _background_nisar_refresh() -> None:
+    vectors = fetch_nisar_ksa_vectors()
+    if vectors:
+        _STATE["vectors"] = vectors_to_dicts(vectors)
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     init_db()
-    _STATE["vectors"] = vectors_to_dicts(fetch_nisar_ksa_vectors())
+    # Seed immediately so port 8000 binds in <0.2s; stream NASA Earthdata + Dask FFT in background
+    _STATE["vectors"] = vectors_to_dicts(generate_calibrated_ksa_drift_field())
+    threading.Thread(target=_background_nisar_refresh, daemon=True).start()
     yield
 
 
@@ -116,6 +130,7 @@ def token_status() -> dict[str, Any]:
             "active_source": (
                 "nisar_gslc_fft" if any(v.get("source") == "nisar_gslc_fft" for v in _STATE["vectors"]) else "calibrated_sar_model"
             ),
+            "pipeline_status": get_pipeline_status(),
             "detail": (
                 f"Authenticated with NASA Earthdata; matched NISAR_L2_GSLC_V1 ({len(v1)}+), "
                 f"PROVISIONAL_V1 ({len(prov)}+), BETA_V1 ({len(beta)}+) granules over KSA."
@@ -179,4 +194,8 @@ def simulate_risk(payload: SimulationRequest) -> dict[str, Any]:
 @app.post("/api/pipeline/refresh")
 def refresh_pipeline() -> dict[str, Any]:
     _STATE["vectors"] = vectors_to_dicts(fetch_nisar_ksa_vectors())
-    return {"refreshed": True, "vector_count": len(_STATE["vectors"])}
+    return {
+        "refreshed": True,
+        "vector_count": len(_STATE["vectors"]),
+        "pipeline_status": get_pipeline_status(),
+    }
