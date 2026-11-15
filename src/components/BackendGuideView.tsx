@@ -9,17 +9,15 @@ interface BackendGuideViewProps {
   onUpdateApiUrl: (nextUrl: string) => void;
 }
 
-const UBUNTU_COMMANDS = `# 1. Inside space-challenge/ on Ubuntu (works in sh, dash, bash, or PyCharm SSH terminal)
+const UBUNTU_COMMANDS = `# 1. Inside space-challenge/ on Ubuntu (PyCharm SSH terminal)
 cd ~/space-challenge
-. venv/bin/activate
-./venv/bin/pip install --upgrade pip && ./venv/bin/pip install -r backend/requirements.txt
+echo "Token length: \${#EARTHDATA_TOKEN}"   # should be > 100 if exported
 
-# 2. Export NASA Earthdata bearer token (streams subsets in memory, zero large disk writes)
-export EARTHDATA_TOKEN="your_earthdata_bearer_token"
+# 2. Check live NASA Earthdata authentication & NISAR granules
+curl -s http://localhost:8000/api/token-status
 
-# 3. Launch FastAPI backend + React frontend simultaneously
-./venv/bin/uvicorn main:app --app-dir backend --host 0.0.0.0 --port 8000 --workers 1 &
-npm install && VITE_API_BASE_URL=http://localhost:8000 npm run dev`;
+# 3. One-command launcher / restarter (FastAPI :8000 + React :3000)
+chmod +x start.sh && ./start.sh`;
 
 export function BackendGuideView({
   apiBaseUrl,
@@ -52,26 +50,26 @@ export function BackendGuideView({
   }
 
   return (
-    <main className="flex-1 overflow-y-auto bg-slate-50 p-4 md:p-6">
+    <main className="flex-1 overflow-y-auto bg-[#07090e] p-4 md:p-6">
       <div className="mx-auto max-w-4xl space-y-6">
-        <div className="border-b border-slate-200 pb-4">
-          <h1 className="text-xl font-bold text-slate-900">
+        <div className="border-b border-slate-800 pb-4">
+          <h1 className="text-xl font-bold text-slate-50">
             EC2 Python 3.14 &amp; FastAPI Connection
           </h1>
-          <p className="mt-1 text-sm text-slate-600">
+          <p className="mt-1 text-sm text-slate-400">
             Connect this React interface to your remote AWS EC2 t3.2xlarge FastAPI backend running
             xarray, Dask (8 workers), GeoPandas, and SQLite.
           </p>
         </div>
 
         {/* Endpoint connection form */}
-        <section className="rounded-lg border border-slate-200 bg-white p-5">
+        <section className="rounded-lg border border-slate-800 bg-[#0b0f18] p-5">
           <div className="flex items-center justify-between gap-4">
             <div className="flex items-center gap-2">
-              <Server className="h-4 w-4 text-slate-600" aria-hidden="true" />
-              <h2 className="text-sm font-bold text-slate-900">FastAPI Backend Endpoint</h2>
+              <Server className="h-4 w-4 text-cyan-400" aria-hidden="true" />
+              <h2 className="text-sm font-bold text-slate-100">FastAPI Backend Endpoint</h2>
             </div>
-            <span className="font-mono text-xs text-slate-600">
+            <span className="font-mono text-xs text-slate-400">
               Active source: {sourceMode === 'fastapi' ? 'Live FastAPI' : 'Local SAR Fallback'}
             </span>
           </div>
@@ -87,69 +85,69 @@ export function BackendGuideView({
               value={draftUrl}
               onChange={(e) => setDraftUrl(e.target.value)}
               placeholder="http://localhost:8000"
-              className="flex-1 rounded-md border border-slate-300 bg-white px-3 py-2 font-mono text-xs text-slate-900 focus:border-blue-600 focus:outline-none"
+              className="flex-1 rounded border border-slate-800 bg-[#07090e] px-3 py-2 font-mono text-xs text-slate-100 focus:border-cyan-400 focus:outline-none"
             />
             <button
               type="submit"
               disabled={probing}
-              className="rounded-md bg-blue-600 px-4 py-2 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-60 transition-colors whitespace-nowrap cursor-pointer"
+              className="rounded bg-cyan-400 px-4 py-2 text-xs font-semibold text-slate-950 hover:bg-cyan-300 disabled:opacity-60 transition-colors whitespace-nowrap cursor-pointer"
             >
               {probing ? 'Testing...' : 'Save & Test Endpoint'}
             </button>
           </form>
 
           {probeMessage && (
-            <p className="mt-3 font-mono text-xs text-slate-700">{probeMessage}</p>
+            <p className="mt-3 font-mono text-xs text-cyan-300">{probeMessage}</p>
           )}
         </section>
 
         {/* Architecture constraints & terminal launch commands */}
-        <section className="rounded-lg border border-slate-200 bg-white p-5 space-y-4">
+        <section className="rounded-lg border border-slate-800 bg-[#0b0f18] p-5 space-y-4">
           <div className="flex items-center justify-between gap-3">
-            <h2 className="text-sm font-bold text-slate-900">
-              Ubuntu Simultaneous Launch Commands
+            <h2 className="text-sm font-bold text-slate-100">
+              Ubuntu Launch &amp; Restart Commands
             </h2>
             <button
               type="button"
               onClick={handleCopyCommands}
-              className="inline-flex items-center gap-1.5 rounded border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-800 hover:bg-slate-50 transition-colors cursor-pointer"
+              className="inline-flex items-center gap-1.5 rounded border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs font-medium text-slate-200 hover:bg-slate-800 transition-colors cursor-pointer"
             >
               {copied ? (
                 <>
-                  <Check className="h-3.5 w-3.5 text-emerald-600" aria-hidden="true" />
+                  <Check className="h-3.5 w-3.5 text-emerald-400" aria-hidden="true" />
                   <span>Copied</span>
                 </>
               ) : (
                 <>
-                  <Copy className="h-3.5 w-3.5 text-slate-500" aria-hidden="true" />
+                  <Copy className="h-3.5 w-3.5 text-slate-400" aria-hidden="true" />
                   <span>Copy Commands</span>
                 </>
               )}
             </button>
           </div>
 
-          <pre className="overflow-x-auto rounded-md border border-slate-200 bg-slate-900 p-4 font-mono text-xs leading-relaxed text-slate-100">
+          <pre className="overflow-x-auto rounded border border-slate-800 bg-[#05070c] p-4 font-mono text-xs leading-relaxed text-slate-200">
             <code>{UBUNTU_COMMANDS}</code>
           </pre>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2 border-t border-slate-100 text-xs">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2 border-t border-slate-800 text-xs">
             <div>
-              <div className="font-semibold text-slate-900">engine.py (NISAR + Dask)</div>
-              <p className="mt-1 text-slate-600 leading-relaxed">
+              <div className="font-semibold text-slate-100">engine.py (NISAR + Dask)</div>
+              <p className="mt-1 text-slate-400 leading-relaxed">
                 Streams NISAR L2 GSLC subsets lazily via earthaccess + fsspec + xarray (1024px chunks)
                 and runs 2D FFT cross-correlation across 8 Dask workers.
               </p>
             </div>
             <div>
-              <div className="font-semibold text-slate-900">db_manager.py (SQLite + GeoPandas)</div>
-              <p className="mt-1 text-slate-600 leading-relaxed">
+              <div className="font-semibold text-slate-100">db_manager.py (SQLite + GeoPandas)</div>
+              <p className="mt-1 text-slate-400 leading-relaxed">
                 Stores Saudi infrastructure POIs in SQLite, transforms coordinates to UTM Zone 38N,
                 and projects wind-adjusted T-min &amp; collision probability.
               </p>
             </div>
             <div>
-              <div className="font-semibold text-slate-900">main.py (FastAPI + CORS)</div>
-              <p className="mt-1 text-slate-600 leading-relaxed">
+              <div className="font-semibold text-slate-100">main.py (FastAPI + CORS)</div>
+              <p className="mt-1 text-slate-400 leading-relaxed">
                 Exposes /api/drift-vectors, /api/pois, and /api/simulate JSON endpoints with CORS
                 enabled for React Leaflet telemetry.
               </p>

@@ -5,6 +5,7 @@ Python 3.14 | Serves SAR dune drift velocity vectors and wind-adjusted POI risk 
 
 from __future__ import annotations
 
+import os
 from contextlib import asynccontextmanager
 from typing import Any
 
@@ -35,7 +36,7 @@ async def lifespan(_: FastAPI):
 app = FastAPI(
     title="DuneMarch Dune Drift API",
     version="1.0.0",
-    description="NISAR L2 GSLC dune drift velocity vectors and Saudi POI collision risk telemetry.",
+    description="NISAR L2 GSLC dune drift velocity vectors and Saudi infrastructure sand encroachment telemetry.",
     lifespan=lifespan,
 )
 
@@ -51,11 +52,66 @@ app.add_middleware(
 
 @app.get("/api/health")
 def health() -> dict[str, Any]:
+    token_present = bool(os.getenv("EARTHDATA_TOKEN", "").strip())
+    sources = {v.get("source", "calibrated_sar_model") for v in _STATE["vectors"]}
+    active_source = "nisar_gslc_fft" if "nisar_gslc_fft" in sources else "calibrated_sar_model"
     return {
         "status": "ok",
         "vector_count": len(_STATE["vectors"]),
         "engine": "dask-fft-gslc",
+        "earthdata_token_configured": token_present,
+        "active_data_source": active_source,
     }
+
+
+@app.get("/api/token-status")
+def token_status() -> dict[str, Any]:
+    token = os.getenv("EARTHDATA_TOKEN", "").strip()
+    if not token:
+        return {
+            "token_present": False,
+            "earthdata_authenticated": False,
+            "nisar_granules_found": 0,
+            "active_source": "calibrated_sar_model",
+            "detail": "EARTHDATA_TOKEN environment variable is not set on this host.",
+        }
+
+    try:
+        import earthaccess
+
+        auth = earthaccess.login(strategy="environment")
+        if not auth.authenticated:
+            return {
+                "token_present": True,
+                "earthdata_authenticated": False,
+                "nisar_granules_found": 0,
+                "active_source": "calibrated_sar_model",
+                "detail": "EARTHDATA_TOKEN is present, but NASA Earthdata login rejected it (expired or invalid).",
+            }
+        granules = earthaccess.search_data(
+            short_name="NISAR_L2_GSLC",
+            bounding_box=(34.50, 16.30, 55.70, 32.20),
+            count=2,
+        )
+        return {
+            "token_present": True,
+            "earthdata_authenticated": True,
+            "nisar_granules_found": len(granules),
+            "active_source": "nisar_gslc_fft" if len(granules) >= 2 else "calibrated_sar_model",
+            "detail": (
+                f"Authenticated with NASA Earthdata; {len(granules)} NISAR_L2_GSLC granules matched KSA bounds."
+                if granules
+                else "Authenticated with NASA Earthdata, but 0 NISAR_L2_GSLC public granules matched yet (fallback active)."
+            ),
+        }
+    except Exception as exc:
+        return {
+            "token_present": True,
+            "earthdata_authenticated": False,
+            "nisar_granules_found": 0,
+            "active_source": "calibrated_sar_model",
+            "detail": f"Token check error: {exc}",
+        }
 
 
 @app.get("/api/drift-vectors")

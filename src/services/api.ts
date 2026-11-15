@@ -108,6 +108,8 @@ export async function fetchSimulationData(
 export async function probeFastApiHealth(apiBaseUrl: string): Promise<{
   reachable: boolean;
   sourceMode: DataSourceMode;
+  tokenConfigured?: boolean;
+  activeDataSource?: string;
   message: string;
 }> {
   const controller = new AbortController();
@@ -125,10 +127,16 @@ export async function probeFastApiHealth(apiBaseUrl: string): Promise<{
     }
     const json = await res.json();
     setStoredApiBaseUrl(apiBaseUrl, true);
+    const tokenConfigured = Boolean(json.earthdata_token_configured);
+    const activeDataSource = String(json.active_data_source ?? 'calibrated_sar_model');
     return {
       reachable: true,
       sourceMode: 'fastapi',
-      message: `Connected (${json.vector_count ?? 0} vectors · ${json.engine ?? 'fastapi'})`,
+      tokenConfigured,
+      activeDataSource,
+      message: `Connected (${json.vector_count ?? 0} vectors · Token: ${
+        tokenConfigured ? 'SET' : 'NOT SET'
+      } · Source: ${activeDataSource})`,
     };
   } catch (err) {
     window.clearTimeout(timer);

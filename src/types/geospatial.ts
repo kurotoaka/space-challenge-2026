@@ -6,6 +6,62 @@ export type AppView = 'map' | 'matrix' | 'backend' | 'deck';
 
 export type DataSourceMode = 'fastapi' | 'local_model';
 
+export type ErgZoneName = "Rub' al Khali" | 'Al-Jafurah' | 'Ad-Dahna' | 'An-Nafud';
+
+export type BaseMapStyle = 'satellite' | 'sar' | 'dark';
+
+export interface LayerToggles {
+  heatmap: boolean;
+  vectors: boolean;
+  sarSwath: boolean;
+  ergBounds: boolean;
+}
+
+export type NisarMaturityTier = 'Science Phase' | 'Provisional' | 'Validated V1';
+
+export interface ObservationEpoch {
+  id: string;
+  date: string;
+  label: string;
+  daysSinceBaseline: number;
+  stepDeltaDays: number;
+  hasGapBefore?: boolean;
+  gapNote?: string;
+  maturity: NisarMaturityTier;
+  sceneId: string;
+  orbitTrack: string;
+  trackIndex: number;
+  polarization: string;
+  shamalFactor: number;
+  shamalAzimuthShiftDeg: number;
+  cloudFreeNote: string;
+}
+
+export interface ErgRegion {
+  id: string;
+  name: ErgZoneName;
+  duneType: string;
+  center: [number, number];
+  zoom: number;
+  dominantAzimuthDeg: number;
+  meanSpeedMYr: number;
+  accentColor: string;
+  summary: string;
+  polygon: [number, number][]; // [lon, lat] closed ring
+}
+
+export interface CustomComparePoint {
+  id: string;
+  lat: number;
+  lon: number;
+  label: string;
+  ergId: string;
+  ergZone: ErgZoneName;
+  speedMYr: number;
+  azimuthDeg: number;
+  snr: number;
+}
+
 export interface WindForcing {
   speed_kt: number;
   azimuth_deg: number;

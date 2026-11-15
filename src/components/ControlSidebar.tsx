@@ -1,16 +1,24 @@
-import { SlidersHorizontal } from 'lucide-react';
+import { ChevronDown, ChevronRight, Columns2, PanelLeftClose, PanelLeftOpen, SlidersHorizontal } from 'lucide-react';
+import { useState } from 'react';
+import { ERG_REGIONS } from '../data/ergRegions';
 import type {
+  BaseMapStyle,
   DataSourceMode,
+  ErgZoneName,
+  LayerToggles,
   PoiRisk,
   RiskTier,
-  VisualizationMode,
   WindForcing,
 } from '../types/geospatial';
 import { formatTMin } from '../utils/riskEngine';
 
 interface ControlSidebarProps {
-  vizMode: VisualizationMode;
-  onChangeVizMode: (mode: VisualizationMode) => void;
+  selectedErg: 'All' | ErgZoneName;
+  onSelectErg: (erg: 'All' | ErgZoneName) => void;
+  layers: LayerToggles;
+  onChangeLayers: (next: LayerToggles) => void;
+  baseMap: BaseMapStyle;
+  onChangeBaseMap: (next: BaseMapStyle) => void;
   riskFilter: 'All' | RiskTier;
   onChangeRiskFilter: (filter: 'All' | RiskTier) => void;
   wind: WindForcing;
@@ -20,14 +28,9 @@ interface ControlSidebarProps {
   totalPois: PoiRisk[];
   selectedPoiId: string | null;
   onSelectPoi: (id: string) => void;
+  onComparePoi: (poi: PoiRisk) => void;
   sourceMode: DataSourceMode;
 }
-
-const VIZ_OPTIONS: Array<{ id: VisualizationMode; label: string }> = [
-  { id: 'vectors', label: 'Vectors' },
-  { id: 'heatmap', label: 'Heatmap' },
-  { id: 'combined', label: 'Combined' },
-];
 
 const RISK_OPTIONS: Array<{ id: 'All' | RiskTier; label: string }> = [
   { id: 'All', label: 'All' },
@@ -42,9 +45,9 @@ function getCompassCardinal(deg: number): string {
 }
 
 function getRiskColorClass(tier: RiskTier): string {
-  if (tier === 'High') return 'text-rose-700';
-  if (tier === 'Med') return 'text-amber-700';
-  return 'text-emerald-700';
+  if (tier === 'High') return 'text-rose-400';
+  if (tier === 'Med') return 'text-amber-400';
+  return 'text-emerald-400';
 }
 
 function getRiskSymbol(tier: RiskTier): string {
@@ -54,8 +57,12 @@ function getRiskSymbol(tier: RiskTier): string {
 }
 
 export function ControlSidebar({
-  vizMode,
-  onChangeVizMode,
+  selectedErg,
+  onSelectErg,
+  layers,
+  onChangeLayers,
+  baseMap,
+  onChangeBaseMap,
   riskFilter,
   onChangeRiskFilter,
   wind,
@@ -65,102 +72,231 @@ export function ControlSidebar({
   totalPois,
   selectedPoiId,
   onSelectPoi,
+  onComparePoi,
   sourceMode,
 }: ControlSidebarProps) {
+  const [collapsed, setCollapsed] = useState(false);
+  const [windExpanded, setWindExpanded] = useState(false);
+
   const highCount = totalPois.filter((p) => p.collision_risk === 'High').length;
   const medCount = totalPois.filter((p) => p.collision_risk === 'Med').length;
   const lowCount = totalPois.filter((p) => p.collision_risk === 'Low').length;
 
+  if (collapsed) {
+    return (
+      <div className="hidden lg:flex flex-col items-center border-r border-slate-800/90 bg-[#090d14] py-3 px-1.5 shrink-0">
+        <button
+          type="button"
+          onClick={() => setCollapsed(false)}
+          aria-label="Expand dune control panel"
+          className="rounded border border-slate-800 bg-slate-900 p-2 text-slate-300 hover:text-cyan-300 hover:border-cyan-500/40 transition-colors cursor-pointer"
+        >
+          <PanelLeftOpen className="h-4 w-4" aria-hidden="true" />
+        </button>
+      </div>
+    );
+  }
+
   return (
-    <aside className="w-full lg:w-[356px] shrink-0 border-b lg:border-b-0 lg:border-r border-slate-200 bg-white flex flex-col overflow-hidden">
-      {/* Header summary */}
-      <div className="p-4 border-b border-slate-200">
+    <aside className="w-full lg:w-[292px] shrink-0 border-b lg:border-b-0 lg:border-r border-slate-800/90 bg-[#090d14] flex flex-col overflow-hidden">
+      {/* Compact Header & Counts */}
+      <div className="px-4 py-3 border-b border-slate-800/80">
         <div className="flex items-center justify-between gap-2">
-          <h1 className="text-sm font-bold text-slate-900">
-            Saudi Erg Drift &amp; Risk Control
-          </h1>
-          <span className="text-[11px] font-mono text-slate-500">
-            {sourceMode === 'fastapi' ? 'FastAPI Live' : 'SAR Model'}
-          </span>
+          <div className="min-w-0">
+            <h1 className="text-xs font-bold tracking-wide text-slate-100 truncate">
+              Saudi Erg Telemetry
+            </h1>
+            <div className="text-[11px] font-mono text-slate-400">
+              {sourceMode === 'fastapi' ? 'FastAPI Live' : 'Calibrated SAR Model'}
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setCollapsed(true)}
+            aria-label="Collapse dune control panel"
+            className="hidden lg:inline-flex rounded border border-slate-800 bg-slate-900/80 p-1.5 text-slate-400 hover:text-slate-100 transition-colors cursor-pointer"
+          >
+            <PanelLeftClose className="h-3.5 w-3.5" aria-hidden="true" />
+          </button>
         </div>
 
-        <div className="mt-2.5 grid grid-cols-3 gap-2 pt-2.5 border-t border-slate-100">
+        <div className="mt-2.5 grid grid-cols-3 gap-2 pt-2 border-t border-slate-800/70 text-[11px]">
           <div>
-            <div className="text-[11px] text-slate-500">High Risk</div>
-            <div className="font-mono text-lg font-bold tabular-nums text-rose-700">
-              {highCount}
-            </div>
+            <span className="text-slate-400">◆ High</span>
+            <div className="font-mono text-sm font-bold tabular-nums text-rose-400">{highCount}</div>
           </div>
           <div>
-            <div className="text-[11px] text-slate-500">Med Risk</div>
-            <div className="font-mono text-lg font-bold tabular-nums text-amber-700">
-              {medCount}
-            </div>
+            <span className="text-slate-400">▲ Med</span>
+            <div className="font-mono text-sm font-bold tabular-nums text-amber-400">{medCount}</div>
           </div>
           <div>
-            <div className="text-[11px] text-slate-500">Low Risk</div>
-            <div className="font-mono text-lg font-bold tabular-nums text-emerald-700">
-              {lowCount}
-            </div>
+            <span className="text-slate-400">● Low</span>
+            <div className="font-mono text-sm font-bold tabular-nums text-emerald-400">{lowCount}</div>
           </div>
         </div>
       </div>
 
-      {/* Trajectory Overlay Mode */}
-      <div className="p-4 border-b border-slate-200 space-y-3">
-        <div>
-          <div className="text-xs font-semibold text-slate-800 mb-1.5">
-            Trajectory Overlay
-          </div>
+      {/* Sand Sea Region Selector (Separate Moving Dune Regions) */}
+      <div className="px-4 py-3 border-b border-slate-800/80 space-y-2">
+        <div className="flex items-center justify-between text-[11px]">
+          <span className="font-semibold text-slate-200">Sand Sea Region</span>
+          <span className="font-mono text-slate-400">{selectedErg === 'All' ? '4 Ergs' : selectedErg}</span>
+        </div>
+
+        <div className="grid grid-cols-2 gap-1.5" role="group" aria-label="Select Saudi erg region">
+          <button
+            type="button"
+            onClick={() => onSelectErg('All')}
+            aria-pressed={selectedErg === 'All'}
+            className={`col-span-2 rounded px-2.5 py-1.5 text-left text-[11px] font-medium transition-colors cursor-pointer flex items-center justify-between ${
+              selectedErg === 'All'
+                ? 'bg-cyan-400 text-slate-950 font-semibold'
+                : 'border border-slate-800 bg-slate-900/70 text-slate-300 hover:border-slate-700'
+            }`}
+          >
+            <span>All Saudi Sand Seas</span>
+            <span className="font-mono text-[10px] opacity-80">Overview</span>
+          </button>
+
+          {ERG_REGIONS.map((erg) => {
+            const active = selectedErg === erg.name;
+            return (
+              <button
+                key={erg.id}
+                type="button"
+                onClick={() => onSelectErg(erg.name)}
+                aria-pressed={active}
+                className={`rounded px-2 py-1.5 text-left text-[11px] transition-colors cursor-pointer border ${
+                  active
+                    ? 'border-cyan-400 bg-cyan-400/15 text-cyan-200 font-semibold'
+                    : 'border-slate-800 bg-slate-900/60 text-slate-300 hover:border-slate-700 hover:text-slate-100'
+                }`}
+              >
+                <div className="truncate font-medium">{erg.name}</div>
+                <div className="font-mono text-[10px] tabular-nums text-slate-400">
+                  {erg.meanSpeedMYr.toFixed(1)} m/yr · {erg.dominantAzimuthDeg}°
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* High-Res Radar & Telemetry Layers */}
+      <div className="px-4 py-3 border-b border-slate-800/80 space-y-2.5">
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-[11px] font-semibold text-slate-200">Map &amp; SAR Layers</span>
           <div
             role="group"
-            aria-label="Trajectory visualization mode"
-            className="grid grid-cols-3 gap-1 rounded-md bg-slate-100 p-1"
+            aria-label="Basemap imagery style"
+            className="inline-flex rounded border border-slate-800 bg-slate-900 p-0.5 text-[10px]"
           >
-            {VIZ_OPTIONS.map((opt) => {
-              const active = vizMode === opt.id;
-              return (
-                <button
-                  key={opt.id}
-                  type="button"
-                  onClick={() => onChangeVizMode(opt.id)}
-                  aria-pressed={active}
-                  className={`py-1.5 px-2 text-xs font-medium rounded transition-colors whitespace-nowrap cursor-pointer ${
-                    active
-                      ? 'bg-white text-slate-900 font-semibold border border-slate-200'
-                      : 'text-slate-600 hover:text-slate-900'
-                  }`}
-                >
-                  {opt.label}
-                </button>
-              );
-            })}
+            <button
+              type="button"
+              onClick={() => onChangeBaseMap('satellite')}
+              aria-pressed={baseMap === 'satellite'}
+              className={`px-1.5 py-0.5 rounded transition-colors cursor-pointer ${
+                baseMap === 'satellite'
+                  ? 'bg-slate-700 text-slate-50 font-semibold'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              Satellite
+            </button>
+            <button
+              type="button"
+              onClick={() => onChangeBaseMap('sar')}
+              aria-pressed={baseMap === 'sar'}
+              className={`px-1.5 py-0.5 rounded transition-colors cursor-pointer ${
+                baseMap === 'sar'
+                  ? 'bg-cyan-400 text-slate-950 font-semibold'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              SAR Radar
+            </button>
+            <button
+              type="button"
+              onClick={() => onChangeBaseMap('dark')}
+              aria-pressed={baseMap === 'dark'}
+              className={`px-1.5 py-0.5 rounded transition-colors cursor-pointer ${
+                baseMap === 'dark'
+                  ? 'bg-slate-700 text-slate-50 font-semibold'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              Dark
+            </button>
           </div>
         </div>
 
-        {/* Dominant Wind Forcing Sliders */}
-        <div className="pt-1">
-          <div className="flex items-center justify-between mb-2">
-            <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-800">
-              <SlidersHorizontal className="h-3.5 w-3.5 text-slate-500" aria-hidden="true" />
-              Dominant Wind Forcing
-            </span>
-            <button
-              type="button"
-              onClick={onResetWind}
-              className="text-[11px] font-medium text-blue-600 hover:text-blue-700 cursor-pointer"
-            >
-              Reset
-            </button>
-          </div>
+        <div className="grid grid-cols-2 gap-1.5 text-[11px]">
+          {(
+            [
+              ['heatmap', 'FFT Heatmap'],
+              ['vectors', 'Direction Field'],
+              ['sarSwath', 'NISAR Swaths'],
+              ['ergBounds', 'Erg Borders'],
+            ] as const
+          ).map(([key, label]) => {
+            const active = layers[key];
+            return (
+              <button
+                key={key}
+                type="button"
+                onClick={() => onChangeLayers({ ...layers, [key]: !active })}
+                aria-pressed={active}
+                className={`rounded border px-2.5 py-1.5 text-left font-medium transition-colors cursor-pointer flex items-center justify-between ${
+                  active
+                    ? 'border-cyan-500/40 bg-cyan-500/10 text-cyan-200'
+                    : 'border-slate-800 bg-slate-900/50 text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <span className="truncate">{label}</span>
+                <span className="font-mono text-[10px]">{active ? 'ON' : 'OFF'}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
 
-          <div className="space-y-2.5">
+      {/* Collapsible Wind Forcing Controls */}
+      <div className="border-b border-slate-800/80">
+        <div className="px-4 py-2.5 flex items-center justify-between">
+          <button
+            type="button"
+            onClick={() => setWindExpanded((v) => !v)}
+            aria-expanded={windExpanded}
+            className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-200 hover:text-cyan-300 transition-colors cursor-pointer"
+          >
+            {windExpanded ? (
+              <ChevronDown className="h-3.5 w-3.5 text-slate-400" aria-hidden="true" />
+            ) : (
+              <ChevronRight className="h-3.5 w-3.5 text-slate-400" aria-hidden="true" />
+            )}
+            <SlidersHorizontal className="h-3 w-3 text-cyan-400" aria-hidden="true" />
+            <span>
+              Wind: {wind.speed_kt} kt · {wind.azimuth_deg}° {getCompassCardinal(wind.azimuth_deg)}
+            </span>
+          </button>
+          <button
+            type="button"
+            onClick={onResetWind}
+            className="text-[10px] font-medium text-cyan-400 hover:text-cyan-300 cursor-pointer"
+          >
+            Reset
+          </button>
+        </div>
+
+        {windExpanded && (
+          <div className="px-4 pb-3 space-y-2.5 border-t border-slate-800/60 pt-2.5">
             <div>
-              <div className="flex justify-between text-xs">
-                <label htmlFor="wind-speed-slider" className="text-slate-600">
+              <div className="flex justify-between text-[11px]">
+                <label htmlFor="wind-speed-slider" className="text-slate-400">
                   Wind Speed
                 </label>
-                <span className="font-mono font-semibold tabular-nums text-slate-900">
+                <span className="font-mono font-semibold tabular-nums text-slate-100">
                   {wind.speed_kt} kt
                 </span>
               </div>
@@ -171,19 +307,17 @@ export function ControlSidebar({
                 max={40}
                 step={1}
                 value={wind.speed_kt}
-                onChange={(e) =>
-                  onChangeWind({ ...wind, speed_kt: Number(e.target.value) })
-                }
-                className="mt-1 w-full accent-blue-600 cursor-pointer"
+                onChange={(e) => onChangeWind({ ...wind, speed_kt: Number(e.target.value) })}
+                className="mt-1 w-full accent-cyan-400 cursor-pointer"
               />
             </div>
 
             <div>
-              <div className="flex justify-between text-xs">
-                <label htmlFor="wind-azimuth-slider" className="text-slate-600">
+              <div className="flex justify-between text-[11px]">
+                <label htmlFor="wind-azimuth-slider" className="text-slate-400">
                   Transport Bearing
                 </label>
-                <span className="font-mono font-semibold tabular-nums text-slate-900">
+                <span className="font-mono font-semibold tabular-nums text-slate-100">
                   {wind.azimuth_deg}° {getCompassCardinal(wind.azimuth_deg)}
                 </span>
               </div>
@@ -194,19 +328,17 @@ export function ControlSidebar({
                 max={355}
                 step={5}
                 value={wind.azimuth_deg}
-                onChange={(e) =>
-                  onChangeWind({ ...wind, azimuth_deg: Number(e.target.value) })
-                }
-                className="mt-1 w-full accent-blue-600 cursor-pointer"
+                onChange={(e) => onChangeWind({ ...wind, azimuth_deg: Number(e.target.value) })}
+                className="mt-1 w-full accent-cyan-400 cursor-pointer"
               />
             </div>
 
             <div>
-              <div className="flex justify-between text-xs">
-                <label htmlFor="horizon-slider" className="text-slate-600">
+              <div className="flex justify-between text-[11px]">
+                <label htmlFor="horizon-slider" className="text-slate-400">
                   Projection Horizon
                 </label>
-                <span className="font-mono font-semibold tabular-nums text-slate-900">
+                <span className="font-mono font-semibold tabular-nums text-slate-100">
                   {wind.horizon_years} yrs
                 </span>
               </div>
@@ -217,26 +349,24 @@ export function ControlSidebar({
                 max={25}
                 step={1}
                 value={wind.horizon_years}
-                onChange={(e) =>
-                  onChangeWind({ ...wind, horizon_years: Number(e.target.value) })
-                }
-                className="mt-1 w-full accent-blue-600 cursor-pointer"
+                onChange={(e) => onChangeWind({ ...wind, horizon_years: Number(e.target.value) })}
+                className="mt-1 w-full accent-cyan-400 cursor-pointer"
               />
             </div>
           </div>
-        </div>
+        )}
       </div>
 
       {/* POI Risk Watchlist */}
       <div className="flex-1 min-h-0 flex flex-col">
-        <div className="px-4 pt-3 pb-2 flex items-center justify-between gap-2 border-b border-slate-100">
-          <h2 className="text-xs font-semibold text-slate-800">
-            Monitored POIs ({pois.length})
+        <div className="px-4 py-2 flex items-center justify-between gap-2 border-b border-slate-800/80">
+          <h2 className="text-[11px] font-semibold text-slate-200">
+            Assets ({pois.length})
           </h2>
           <div
             role="group"
             aria-label="Filter POIs by risk"
-            className="flex items-center gap-1 rounded bg-slate-100 p-0.5"
+            className="flex items-center gap-0.5 rounded border border-slate-800 bg-slate-900 p-0.5"
           >
             {RISK_OPTIONS.map((opt) => {
               const active = riskFilter === opt.id;
@@ -246,10 +376,10 @@ export function ControlSidebar({
                   type="button"
                   onClick={() => onChangeRiskFilter(opt.id)}
                   aria-pressed={active}
-                  className={`px-2 py-0.5 text-[11px] font-medium rounded transition-colors cursor-pointer ${
+                  className={`px-1.5 py-0.5 text-[10px] font-medium rounded transition-colors cursor-pointer ${
                     active
-                      ? 'bg-white text-slate-900 font-semibold border border-slate-200'
-                      : 'text-slate-600 hover:text-slate-900'
+                      ? 'bg-cyan-400 text-slate-950 font-semibold'
+                      : 'text-slate-400 hover:text-slate-200'
                   }`}
                 >
                   {opt.label}
@@ -259,42 +389,51 @@ export function ControlSidebar({
           </div>
         </div>
 
-        <ul className="flex-1 overflow-y-auto divide-y divide-slate-100" aria-label="POI risk watchlist">
+        <ul className="flex-1 overflow-y-auto divide-y divide-slate-800/60" aria-label="POI risk watchlist">
           {pois.length === 0 ? (
-            <li className="p-4 text-xs text-slate-500">
-              No points of interest match the selected risk tier.
+            <li className="p-4 text-xs text-slate-400">
+              No points of interest match the selected filters.
             </li>
           ) : (
             pois.map((poi) => {
               const selected = poi.id === selectedPoiId;
               return (
-                <li key={poi.id}>
-                  <button
-                    type="button"
-                    onClick={() => onSelectPoi(poi.id)}
-                    className={`w-full text-left px-4 py-3 transition-colors cursor-pointer focus-visible:outline-2 focus-visible:outline-inset focus-visible:outline-blue-600 ${
-                      selected ? 'bg-blue-50/70' : 'hover:bg-slate-50'
-                    }`}
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <span className="text-xs font-semibold text-slate-900 leading-snug">
-                        {poi.name}
-                      </span>
-                      <span
-                        className={`shrink-0 text-[11px] font-bold tabular-nums ${getRiskColorClass(
-                          poi.collision_risk
-                        )}`}
-                      >
-                        {getRiskSymbol(poi.collision_risk)} {poi.collision_risk}
-                      </span>
-                    </div>
-                    <div className="mt-1 flex items-center justify-between gap-2 text-[11px] text-slate-500">
-                      <span className="truncate">{poi.region}</span>
-                      <span className="font-mono tabular-nums text-slate-700 shrink-0">
-                        T-min {formatTMin(poi.t_min_years, poi.t_min_months)}
-                      </span>
-                    </div>
-                  </button>
+                <li
+                  key={poi.id}
+                  className={`transition-colors ${selected ? 'bg-cyan-500/10' : 'hover:bg-slate-900/80'}`}
+                >
+                  <div className="px-4 py-2.5 flex items-start justify-between gap-2">
+                    <button
+                      type="button"
+                      onClick={() => onSelectPoi(poi.id)}
+                      className="flex-1 min-w-0 text-left cursor-pointer focus-visible:outline-2 focus-visible:outline-cyan-400 rounded"
+                    >
+                      <div className="flex items-center justify-between gap-1.5">
+                        <span className="text-xs font-semibold text-slate-100 truncate">
+                          {poi.name}
+                        </span>
+                      </div>
+                      <div className="mt-0.5 flex items-center gap-2 text-[10px]">
+                        <span className={`font-bold tabular-nums ${getRiskColorClass(poi.collision_risk)}`}>
+                          {getRiskSymbol(poi.collision_risk)} {poi.collision_risk}
+                        </span>
+                        <span className="text-slate-600" aria-hidden="true">·</span>
+                        <span className="font-mono tabular-nums text-slate-300">
+                          T-min {formatTMin(poi.t_min_years, poi.t_min_months)}
+                        </span>
+                      </div>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => onComparePoi(poi)}
+                      aria-label={`Before and after comparison for ${poi.name}`}
+                      title="Before / After SAR"
+                      className="shrink-0 mt-0.5 rounded border border-slate-800 bg-slate-900 p-1.5 text-slate-400 hover:text-cyan-300 hover:border-cyan-500/40 transition-colors cursor-pointer"
+                    >
+                      <Columns2 className="h-3.5 w-3.5" aria-hidden="true" />
+                    </button>
+                  </div>
                 </li>
               );
             })

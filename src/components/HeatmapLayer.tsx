@@ -1,51 +1,51 @@
 import { useEffect } from 'react';
 import L from 'leaflet';
 import { useMap } from 'react-leaflet';
-import type { DriftVector } from '../types/geospatial';
+import { ERG_REGIONS } from '../data/ergRegions';
+import type { DriftVector, ErgZoneName } from '../types/geospatial';
 
 interface HeatmapLayerProps {
   vectors: DriftVector[];
   visible: boolean;
+  selectedErg: 'All' | ErgZoneName;
 }
 
 /**
- * Calibrated 4-stop thermal velocity ramp:
- * Low (0.0) -> Sky/Cyan -> Amber -> Crimson High (1.0)
+ * Calibrated dark-canvas colormap for dune drift speed (0..1):
+ * Transparent Slate -> Deep Cyan -> Bright Cyan -> Telemetry Amber -> Crimson
  */
-function buildColorPalette(): Uint8ClampedArray {
+function buildColorLut(): Uint8ClampedArray {
   const canvas = document.createElement('canvas');
   canvas.width = 256;
   canvas.height = 1;
   const ctx = canvas.getContext('2d');
-  if (!ctx) {
-    return new Uint8ClampedArray(256 * 4);
-  }
+  if (!ctx) return new Uint8ClampedArray(256 * 4);
+
   const grad = ctx.createLinearGradient(0, 0, 256, 0);
-  grad.addColorStop(0.0, 'rgba(14, 165, 233, 0.0)');
-  grad.addColorStop(0.25, 'rgba(6, 182, 212, 0.48)');
-  grad.addColorStop(0.55, 'rgba(245, 158, 11, 0.72)');
-  grad.addColorStop(0.82, 'rgba(234, 88, 12, 0.84)');
-  grad.addColorStop(1.0, 'rgba(220, 38, 38, 0.92)');
+  grad.addColorStop(0.0, 'rgba(8, 145, 178, 0.06)');
+  grad.addColorStop(0.28, 'rgba(6, 182, 212, 0.34)');
+  grad.addColorStop(0.54, 'rgba(245, 158, 11, 0.48)');
+  grad.addColorStop(0.78, 'rgba(234, 88, 12, 0.58)');
+  grad.addColorStop(1.0, 'rgba(225, 29, 72, 0.68)');
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, 256, 1);
   return ctx.getImageData(0, 0, 256, 1).data;
 }
 
 /**
- * Lightweight HTML5 Canvas Leaflet overlay that renders dune drift velocity
- * intensity contours without blocking map interaction or external heatmap plugins.
+ * High-resolution IDW-interpolated velocity heatmap masked tightly inside Saudi Arabia's
+ * 4 georeferenced sand sea polygons so intensity follows real dune seas rather than blobs.
  */
-export function HeatmapLayer({ vectors, visible }: HeatmapLayerProps) {
+export function HeatmapLayer({ vectors, visible, selectedErg }: HeatmapLayerProps) {
   const map = useMap();
 
   useEffect(() => {
-    if (!visible || vectors.length === 0) {
-      return;
-    }
+    if (!visible || vectors.length === 0) return;
 
-    const palette = buildColorPalette();
+    const lut = buildColorLut();
+    const offscreen = document.createElement('canvas');
 
-    const CanvasHeatOverlay = L.Layer.extend({
+    const ErgHeatmapOverlay = L.Layer.extend({
       onAdd(targetMap: L.Map) {
         const canvas = L.DomUtil.create('canvas', 'leaflet-zoom-animated pointer-events-none');
         canvas.style.position = 'absolute';
@@ -55,9 +55,7 @@ export function HeatmapLayer({ vectors, visible }: HeatmapLayerProps) {
         canvas.style.zIndex = '410';
         this._canvas = canvas;
 
-        const pane = targetMap.getPanes().overlayPane;
-        pane.appendChild(canvas);
-
+        targetMap.getPanes().overlayPane.appendChild(canvas);
         targetMap.on('moveend zoomend resize', this._draw, this);
         this._draw();
         return this;
@@ -82,60 +80,112 @@ export function HeatmapLayer({ vectors, visible }: HeatmapLayerProps) {
         canvas.width = size.x;
         canvas.height = size.y;
 
-        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+        const ctx = canvas.getContext('2d');
         if (!ctx) return;
-
         ctx.clearRect(0, 0, size.x, size.y);
 
-        // Scale Gaussian kernel radius smoothly with map zoom so adjacent erg vectors blend
+        // Downsampled interpolation grid (4px resolution upscaled with bilinear smoothing)
+        const scale = 4;
+        const gw = Math.max(1, Math.ceil(size.x / scale));
+        const gh = Math.max(1, Math.ceil(size.y / scale));
+        offscreen.width = gw;
+        offscreen.height = gh;
+        const octx = offscreen.getContext('2d', { willReadFrequently: true });
+        if (!octx) return;
+
+        const projected = vectors
+          .map((vec) => {
+            const pt = map.latLngToContainerPoint([vec.lat, vec.lon]);
+            return {
+              x: pt.x / scale,
+              y: pt.y / scale,
+              speed: vec.speed_m_yr,
+              erg: vec.erg_zone,
+            };
+          })
+          .filter(
+            (p) =>
+              p.x >= -40 &&
+              p.y >= -40 &&
+              p.x <= gw + 40 &&
+              p.y <= gh + 40 &&
+              (selectedErg === 'All' || p.erg === selectedErg)
+          );
+
+        if (projected.length === 0) return;
+
+        const img = octx.createImageData(gw, gh);
+        const px = img.data;
         const zoom = map.getZoom();
-        const radius = Math.max(46, Math.min(125, Math.round(30 * Math.pow(1.42, zoom - 4))));
-        const maxSpeed = 27.0;
+        const influenceRadiusSq = Math.pow(Math.max(14, Math.min(48, 12 * Math.pow(1.38, zoom - 5))), 2);
+        const maxSpeed = 27.5;
+        const minSpeed = 4.0;
 
-        for (const vec of vectors) {
-          const pt = map.latLngToContainerPoint([vec.lat, vec.lon]);
-          if (
-            pt.x < -radius ||
-            pt.y < -radius ||
-            pt.x > size.x + radius ||
-            pt.y > size.y + radius
-          ) {
-            continue;
+        for (let gy = 0; gy < gh; gy++) {
+          for (let gx = 0; gx < gw; gx++) {
+            let wSum = 0;
+            let vSum = 0;
+            let minDistSq = Infinity;
+
+            for (let k = 0; k < projected.length; k++) {
+              const p = projected[k];
+              const dx = gx - p.x;
+              const dy = gy - p.y;
+              const d2 = dx * dx + dy * dy;
+              if (d2 < minDistSq) minDistSq = d2;
+              if (d2 > influenceRadiusSq) continue;
+              const w = 1.0 / (d2 + 4.5);
+              wSum += w;
+              vSum += w * p.speed;
+            }
+
+            if (wSum > 0 && minDistSq < influenceRadiusSq * 0.72) {
+              const speed = vSum / wSum;
+              const norm = Math.max(0, Math.min(1, (speed - minSpeed) / (maxSpeed - minSpeed)));
+              const edgeFade = Math.max(0, Math.min(1, 1 - minDistSq / (influenceRadiusSq * 0.72)));
+              const lutIdx = Math.round(norm * 255) * 4;
+              const idx = (gy * gw + gx) * 4;
+              px[idx] = lut[lutIdx];
+              px[idx + 1] = lut[lutIdx + 1];
+              px[idx + 2] = lut[lutIdx + 2];
+              px[idx + 3] = Math.round(lut[lutIdx + 3] * Math.sqrt(edgeFade));
+            }
           }
-          const intensity = Math.max(0.24, Math.min(1.0, vec.speed_m_yr / maxSpeed));
-          const radGrad = ctx.createRadialGradient(pt.x, pt.y, 0, pt.x, pt.y, radius);
-          radGrad.addColorStop(0, `rgba(0, 0, 0, ${intensity * 0.85})`);
-          radGrad.addColorStop(0.55, `rgba(0, 0, 0, ${intensity * 0.35})`);
-          radGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
-          ctx.fillStyle = radGrad;
-          ctx.beginPath();
-          ctx.arc(pt.x, pt.y, radius, 0, Math.PI * 2);
-          ctx.fill();
         }
 
-        const imgData = ctx.getImageData(0, 0, size.x, size.y);
-        const px = imgData.data;
-        for (let i = 0; i < px.length; i += 4) {
-          const alpha = px[i + 3];
-          if (alpha > 0) {
-            const lutIdx = alpha * 4;
-            px[i] = palette[lutIdx];
-            px[i + 1] = palette[lutIdx + 1];
-            px[i + 2] = palette[lutIdx + 2];
-            px[i + 3] = Math.min(205, Math.round(palette[lutIdx + 3] * 0.85));
-          }
+        octx.putImageData(img, 0, 0);
+
+        // Clip cleanly to active Erg region polygon(s) so heatmap hugs exact sand sea geography
+        const activeErgs =
+          selectedErg === 'All'
+            ? ERG_REGIONS
+            : ERG_REGIONS.filter((e) => e.name === selectedErg);
+
+        ctx.save();
+        ctx.beginPath();
+        for (const erg of activeErgs) {
+          erg.polygon.forEach(([lon, lat], i) => {
+            const pt = map.latLngToContainerPoint([lat, lon]);
+            if (i === 0) ctx.moveTo(pt.x, pt.y);
+            else ctx.lineTo(pt.x, pt.y);
+          });
+          ctx.closePath();
         }
-        ctx.putImageData(imgData, 0, 0);
+        ctx.clip();
+
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+        ctx.drawImage(offscreen, 0, 0, size.x, size.y);
+        ctx.restore();
       },
     });
 
-    const layer = new (CanvasHeatOverlay as unknown as new () => L.Layer)();
+    const layer = new (ErgHeatmapOverlay as unknown as new () => L.Layer)();
     layer.addTo(map);
-
     return () => {
       map.removeLayer(layer);
     };
-  }, [map, vectors, visible]);
+  }, [map, vectors, visible, selectedErg]);
 
   return null;
 }

@@ -87,8 +87,8 @@ export function buildPresentationPptx(
   const pptx = new PptxGenJS();
   pptx.layout = 'LAYOUT_WIDE';
   pptx.author = 'DuneMarch';
-  pptx.title = 'DuneMarch — Saudi Dune Drift & Risk Assessment';
-  pptx.subject = 'NISAR L2 GSLC Dune Drift Tracking & Collision Risk';
+  pptx.title = 'DuneMarch — Saudi Dune Drift & Encroachment Risk';
+  pptx.subject = 'NISAR L2 GSLC Dune Drift Tracking & Sand Encroachment';
 
   const highPois = pois.filter((p) => p.collision_risk === 'High');
   const maxDrift = vectors.reduce((m, v) => Math.max(m, v.speed_m_yr), 0);
@@ -125,7 +125,7 @@ export function buildPresentationPptx(
     lineSpacingMultiple: 1.12,
   });
   s1.addText(
-    'Lazy-streaming NISAR Level-2 GSLC radar analysis, wind-adjusted aeolian collision forecasting, and interactive Saudi geospatial risk telemetry.',
+    'Lazy-streaming NISAR Level-2 GSLC radar analysis, wind-adjusted aeolian encroachment forecasting, and interactive Saudi geospatial telemetry.',
     {
       x: 0.9,
       y: 3.65,
@@ -202,7 +202,7 @@ export function buildPresentationPptx(
     ],
     [
       'Our Solution',
-      'Stream spatial subsets in memory, measure pixel-level displacement via 2D FFT, and compute wind-adjusted Time to Collision (T-min) for critical assets.',
+      'Stream spatial subsets in memory, measure pixel-level displacement via 2D FFT, and compute wind-adjusted Perimeter Breach ETA (T-min) for critical assets.',
     ],
   ];
   s2Cards.forEach(([heading, body], idx) => {
@@ -304,7 +304,7 @@ export function buildPresentationPptx(
   addSlideHeader(
     s4,
     '04. Risk Math (db_manager.py)',
-    'Projecting Drift Vectors to Infrastructure Collision T-min',
+    'Projecting Drift Vectors to Perimeter Breach ETA (T-min)',
     4
   );
   const leftItems = [
@@ -318,7 +318,7 @@ export function buildPresentationPptx(
     ],
     [
       'Closest Approach & Probability',
-      'Solves forward ray-to-perimeter intersection distance to compute Estimated T-min, Collision Probability %, and High / Med / Low tiers.',
+      'Solves forward ray-to-perimeter intersection distance to compute Perimeter Breach T-min, Encroachment Probability %, and High / Med / Low tiers.',
     ],
   ];
   leftItems.forEach(([heading, desc], idx) => {
@@ -432,7 +432,7 @@ export function buildPresentationPptx(
     ],
     [
       '3. 6-Field POI Tooltip',
-      'Clicking any POI marker displays Name, Exact Coordinates, 1-sentence summary, Collision Risk (High/Med/Low), Estimated T-min, and Wind Influence factor.',
+      'Clicking any POI marker displays Name, Exact Coordinates, 1-sentence summary, Encroachment Risk (High/Med/Low), Breach ETA T-min, and Wind Influence factor.',
     ],
   ];
   s5Cols.forEach(([heading, body], idx) => {

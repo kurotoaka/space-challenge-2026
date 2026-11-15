@@ -1,85 +1,138 @@
-import { Fragment } from 'react';
-import { Polyline, Tooltip } from 'react-leaflet';
-import type { DriftVector } from '../types/geospatial';
+import { useEffect } from 'react';
+import L from 'leaflet';
+import { useMap } from 'react-leaflet';
+import type { DriftVector, ErgZoneName } from '../types/geospatial';
 
 interface DriftVectorsLayerProps {
   vectors: DriftVector[];
   visible: boolean;
+  selectedErg: 'All' | ErgZoneName;
 }
 
-function getVelocityColor(speed: number): string {
-  if (speed >= 20) return '#dc2626';
-  if (speed >= 14) return '#d97706';
-  return '#0284c7';
+function getStrokeColor(speed: number): string {
+  if (speed >= 21) return 'rgba(251, 113, 133, 0.92)'; // Rose high-velocity
+  if (speed >= 15) return 'rgba(251, 191, 36, 0.88)';  // Amber moderate-fast
+  return 'rgba(34, 211, 238, 0.82)';                   // Cyan steady drift
 }
 
-export function DriftVectorsLayer({ vectors, visible }: DriftVectorsLayerProps) {
-  if (!visible) {
-    return null;
-  }
+/**
+ * High-DPI Canvas directional vector field overlay.
+ * Renders crisp 1.15px micro-arrows without bulky DOM polylines, automatically thinning
+ * dense points at continental zoom and revealing full sub-erg detail when zoomed in.
+ */
+export function DriftVectorsLayer({ vectors, visible, selectedErg }: DriftVectorsLayerProps) {
+  const map = useMap();
 
-  return (
-    <>
-      {vectors.map((vec) => {
-        const color = getVelocityColor(vec.speed_m_yr);
-        const degLength = Math.max(0.18, Math.min(0.56, vec.speed_m_yr * 0.02));
-        const rad = (vec.azimuth_deg * Math.PI) / 180;
-        const cosLat = Math.max(0.4, Math.cos((vec.lat * Math.PI) / 180));
+  useEffect(() => {
+    if (!visible || vectors.length === 0) return;
 
-        const endLat = vec.lat + degLength * Math.cos(rad);
-        const endLon = vec.lon + (degLength * Math.sin(rad)) / cosLat;
+    const VectorFieldOverlay = L.Layer.extend({
+      onAdd(targetMap: L.Map) {
+        const canvas = L.DomUtil.create('canvas', 'leaflet-zoom-animated pointer-events-none');
+        canvas.style.position = 'absolute';
+        canvas.style.top = '0';
+        canvas.style.left = '0';
+        canvas.style.pointerEvents = 'none';
+        canvas.style.zIndex = '420';
+        this._canvas = canvas;
 
-        // Chevron arrowhead wings (+/- 148 deg back from travel azimuth)
-        const wingLen = Math.max(0.08, degLength * 0.28);
-        const leftWingRad = ((vec.azimuth_deg + 148) * Math.PI) / 180;
-        const rightWingRad = ((vec.azimuth_deg - 148) * Math.PI) / 180;
+        targetMap.getPanes().overlayPane.appendChild(canvas);
+        targetMap.on('moveend zoomend resize', this._draw, this);
+        this._draw();
+        return this;
+      },
 
-        const leftLat = endLat + wingLen * Math.cos(leftWingRad);
-        const leftLon = endLon + (wingLen * Math.sin(leftWingRad)) / cosLat;
-        const rightLat = endLat + wingLen * Math.cos(rightWingRad);
-        const rightLon = endLon + (wingLen * Math.sin(rightWingRad)) / cosLat;
+      onRemove(targetMap: L.Map) {
+        targetMap.off('moveend zoomend resize', this._draw, this);
+        if (this._canvas && this._canvas.parentNode) {
+          this._canvas.parentNode.removeChild(this._canvas);
+        }
+      },
 
-        return (
-          <Fragment key={vec.id}>
-            <Polyline
-              positions={[
-                [vec.lat, vec.lon],
-                [endLat, endLon],
-              ]}
-              pathOptions={{
-                color,
-                weight: 2.2,
-                opacity: 0.9,
-              }}
-            >
-              <Tooltip direction="top" sticky>
-                <div className="font-sans font-semibold text-xs text-slate-900">{vec.erg_zone}</div>
-                <div className="font-mono text-[11px] tabular-nums text-slate-700">
-                  {vec.speed_m_yr.toFixed(1)} m/yr · {vec.azimuth_deg.toFixed(0)}°
-                </div>
-                <div className="font-mono text-[11px] tabular-nums text-slate-500">
-                  u={vec.u_m_yr.toFixed(1)}, v={vec.v_m_yr.toFixed(1)} m/yr · SNR {vec.snr.toFixed(1)}
-                </div>
-              </Tooltip>
-            </Polyline>
-            <Polyline
-              positions={[
-                [leftLat, leftLon],
-                [endLat, endLon],
-                [rightLat, rightLon],
-              ]}
-              interactive={false}
-              pathOptions={{
-                color,
-                weight: 2.2,
-                opacity: 0.9,
-                lineCap: 'round',
-                lineJoin: 'round',
-              }}
-            />
-          </Fragment>
-        );
-      })}
-    </>
-  );
+      _draw() {
+        const canvas: HTMLCanvasElement = this._canvas;
+        if (!canvas) return;
+        const size = map.getSize();
+        if (size.x === 0 || size.y === 0) return;
+
+        const topLeft = map.containerPointToLayerPoint([0, 0]);
+        L.DomUtil.setPosition(canvas, topLeft);
+
+        const dpr = Math.min(window.devicePixelRatio || 1, 2);
+        canvas.width = Math.round(size.x * dpr);
+        canvas.height = Math.round(size.y * dpr);
+        canvas.style.width = `${size.x}px`;
+        canvas.style.height = `${size.y}px`;
+
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        ctx.clearRect(0, 0, size.x, size.y);
+
+        const zoom = map.getZoom();
+        // Minimum screen-space separation prevents cluttered overlapping arrows
+        const minGapPx = zoom >= 8 ? 16 : zoom >= 7 ? 20 : 24;
+        const minGapSq = minGapPx * minGapPx;
+        const placed: Array<[number, number]> = [];
+
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.lineWidth = zoom >= 8 ? 1.3 : 1.1;
+
+        for (const vec of vectors) {
+          if (selectedErg !== 'All' && vec.erg_zone !== selectedErg) {
+            continue;
+          }
+          const pt = map.latLngToContainerPoint([vec.lat, vec.lon]);
+          if (pt.x < -20 || pt.y < -20 || pt.x > size.x + 20 || pt.y > size.y + 20) {
+            continue;
+          }
+
+          let tooClose = false;
+          for (let i = 0; i < placed.length; i++) {
+            const dx = pt.x - placed[i][0];
+            const dy = pt.y - placed[i][1];
+            if (dx * dx + dy * dy < minGapSq) {
+              tooClose = true;
+              break;
+            }
+          }
+          if (tooClose) continue;
+          placed.push([pt.x, pt.y]);
+
+          // Crisp micro-vector length in pixels scaled cleanly by speed & zoom
+          const lenPx = Math.max(9, Math.min(22, 6 + vec.speed_m_yr * 0.45 + (zoom - 6) * 2.2));
+          const rad = (vec.azimuth_deg * Math.PI) / 180;
+          const sinA = Math.sin(rad);
+          const cosA = Math.cos(rad);
+
+          const x0 = pt.x - (lenPx * 0.38) * sinA;
+          const y0 = pt.y + (lenPx * 0.38) * cosA;
+          const x1 = pt.x + (lenPx * 0.62) * sinA;
+          const y1 = pt.y - (lenPx * 0.62) * cosA;
+
+          const headLen = Math.max(3.6, lenPx * 0.28);
+          const leftRad = ((vec.azimuth_deg + 148) * Math.PI) / 180;
+          const rightRad = ((vec.azimuth_deg - 148) * Math.PI) / 180;
+
+          ctx.strokeStyle = getStrokeColor(vec.speed_m_yr);
+          ctx.beginPath();
+          ctx.moveTo(x0, y0);
+          ctx.lineTo(x1, y1);
+          ctx.moveTo(x1 + headLen * Math.sin(leftRad), y1 - headLen * Math.cos(leftRad));
+          ctx.lineTo(x1, y1);
+          ctx.lineTo(x1 + headLen * Math.sin(rightRad), y1 - headLen * Math.cos(rightRad));
+          ctx.stroke();
+        }
+      },
+    });
+
+    const layer = new (VectorFieldOverlay as unknown as new () => L.Layer)();
+    layer.addTo(map);
+    return () => {
+      map.removeLayer(layer);
+    };
+  }, [map, vectors, visible, selectedErg]);
+
+  return null;
 }

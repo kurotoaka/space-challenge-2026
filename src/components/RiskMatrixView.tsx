@@ -9,9 +9,9 @@ interface RiskMatrixViewProps {
 }
 
 function getRiskTone(tier: RiskTier): string {
-  if (tier === 'High') return 'text-rose-700 font-semibold';
-  if (tier === 'Med') return 'text-amber-700 font-semibold';
-  return 'text-emerald-700 font-semibold';
+  if (tier === 'High') return 'text-rose-400 font-semibold';
+  if (tier === 'Med') return 'text-amber-400 font-semibold';
+  return 'text-emerald-400 font-semibold';
 }
 
 function getRiskSymbol(tier: RiskTier): string {
@@ -40,22 +40,22 @@ export function RiskMatrixView({ pois, onInspectOnMap }: RiskMatrixViewProps) {
   }, [pois, query, tierFilter]);
 
   return (
-    <main className="flex-1 overflow-y-auto bg-slate-50 p-4 md:p-6">
+    <main className="flex-1 overflow-y-auto bg-[#07090e] p-4 md:p-6">
       <div className="mx-auto max-w-6xl space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 border-b border-slate-200 pb-4">
+        <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 border-b border-slate-800 pb-4">
           <div>
-            <h1 className="text-xl font-bold text-slate-900">
-              Infrastructure Collision Risk Matrix
+            <h1 className="text-xl font-bold text-slate-50">
+              Infrastructure Sand Encroachment Matrix
             </h1>
-            <p className="mt-1 text-sm text-slate-600">
-              Forward-projected NISAR drift vectors interpolated at monitored Saudi Arabian assets.
+            <p className="mt-1 text-sm text-slate-400">
+              Forward-projected NISAR drift vectors tracking perimeter burial ETA across monitored Saudi assets.
             </p>
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
             <div className="relative">
               <Search
-                className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400"
+                className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-500"
                 aria-hidden="true"
               />
               <input
@@ -64,14 +64,14 @@ export function RiskMatrixView({ pois, onInspectOnMap }: RiskMatrixViewProps) {
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="Filter by asset or erg..."
-                className="w-56 rounded-md border border-slate-300 bg-white pl-8 pr-3 py-1.5 text-xs text-slate-900 placeholder:text-slate-400 focus:border-blue-600 focus:outline-none"
+                className="w-56 rounded border border-slate-800 bg-[#0b1019] pl-8 pr-3 py-1.5 text-xs text-slate-100 placeholder:text-slate-500 focus:border-cyan-400 focus:outline-none"
               />
             </div>
 
             <div
               role="group"
               aria-label="Filter matrix by risk tier"
-              className="flex items-center gap-1 rounded-md bg-slate-200/70 p-1"
+              className="flex items-center gap-1 rounded border border-slate-800 bg-[#0b1019] p-1"
             >
               {(['All', 'High', 'Med', 'Low'] as const).map((tier) => (
                 <button
@@ -81,8 +81,8 @@ export function RiskMatrixView({ pois, onInspectOnMap }: RiskMatrixViewProps) {
                   aria-pressed={tierFilter === tier}
                   className={`px-2.5 py-1 text-xs font-medium rounded transition-colors cursor-pointer ${
                     tierFilter === tier
-                      ? 'bg-white text-slate-900 font-semibold border border-slate-200'
-                      : 'text-slate-600 hover:text-slate-900'
+                      ? 'bg-cyan-400 text-slate-950 font-semibold'
+                      : 'text-slate-400 hover:text-slate-200'
                   }`}
                 >
                   {tier}
@@ -92,59 +92,59 @@ export function RiskMatrixView({ pois, onInspectOnMap }: RiskMatrixViewProps) {
           </div>
         </div>
 
-        <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
+        <div className="overflow-x-auto rounded-lg border border-slate-800 bg-[#0b0f18]">
           <table className="w-full border-collapse text-left text-xs">
             <thead>
-              <tr className="border-b border-slate-200 bg-slate-50 text-[11px] font-semibold text-slate-600">
+              <tr className="border-b border-slate-800 bg-[#090d14] text-[11px] font-semibold text-slate-400">
                 <th className="px-4 py-3">Point of Interest</th>
                 <th className="px-4 py-3">Coordinates</th>
-                <th className="px-4 py-3">Collision Risk</th>
+                <th className="px-4 py-3">Encroachment Risk</th>
                 <th className="px-4 py-3 text-right">Probability</th>
-                <th className="px-4 py-3 text-right">Estimated T-min</th>
+                <th className="px-4 py-3 text-right">Breach ETA (T-min)</th>
                 <th className="px-4 py-3 text-right">Wind Influence</th>
                 <th className="px-4 py-3 text-right">Drift Rate</th>
                 <th className="px-4 py-3 text-right">Map</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
+            <tbody className="divide-y divide-slate-800/80">
               {filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="px-4 py-8 text-center text-slate-500">
+                  <td colSpan={8} className="px-4 py-8 text-center text-slate-400">
                     No monitored points of interest match your filter criteria.
                   </td>
                 </tr>
               ) : (
                 filtered.map((poi) => (
-                  <tr key={poi.id} className="hover:bg-slate-50/80 transition-colors">
+                  <tr key={poi.id} className="hover:bg-slate-900/60 transition-colors">
                     <td className="px-4 py-3 max-w-xs">
-                      <div className="font-semibold text-slate-900">{poi.name}</div>
-                      <div className="mt-0.5 text-[11px] text-slate-500">
+                      <div className="font-semibold text-slate-100">{poi.name}</div>
+                      <div className="mt-0.5 text-[11px] text-slate-400">
                         {poi.category} · {poi.region}
                       </div>
                     </td>
-                    <td className="px-4 py-3 font-mono tabular-nums text-slate-700 whitespace-nowrap">
+                    <td className="px-4 py-3 font-mono tabular-nums text-slate-300 whitespace-nowrap">
                       {formatCoordinates(poi.lat, poi.lon)}
                     </td>
                     <td className={`px-4 py-3 whitespace-nowrap ${getRiskTone(poi.collision_risk)}`}>
                       {getRiskSymbol(poi.collision_risk)} {poi.collision_risk}
                     </td>
-                    <td className="px-4 py-3 text-right font-mono tabular-nums text-slate-900">
+                    <td className="px-4 py-3 text-right font-mono tabular-nums text-slate-100">
                       {poi.collision_probability_pct.toFixed(1)}%
                     </td>
-                    <td className="px-4 py-3 text-right font-mono font-semibold tabular-nums text-slate-900 whitespace-nowrap">
+                    <td className="px-4 py-3 text-right font-mono font-semibold tabular-nums text-cyan-300 whitespace-nowrap">
                       {formatTMin(poi.t_min_years, poi.t_min_months)}
                     </td>
-                    <td className="px-4 py-3 text-right font-mono tabular-nums text-slate-700">
+                    <td className="px-4 py-3 text-right font-mono tabular-nums text-slate-300">
                       {poi.wind_influence.toFixed(2)}x
                     </td>
-                    <td className="px-4 py-3 text-right font-mono tabular-nums text-slate-700 whitespace-nowrap">
+                    <td className="px-4 py-3 text-right font-mono tabular-nums text-slate-300 whitespace-nowrap">
                       {poi.effective_drift_m_yr.toFixed(1)} m/yr
                     </td>
                     <td className="px-4 py-3 text-right">
                       <button
                         type="button"
                         onClick={() => onInspectOnMap(poi.id)}
-                        className="rounded border border-slate-300 bg-white px-2.5 py-1 text-[11px] font-medium text-slate-800 hover:bg-slate-100 transition-colors whitespace-nowrap cursor-pointer"
+                        className="rounded border border-slate-700 bg-slate-900 px-2.5 py-1 text-[11px] font-medium text-slate-200 hover:border-cyan-500/50 hover:text-cyan-300 transition-colors whitespace-nowrap cursor-pointer"
                       >
                         Locate
                       </button>

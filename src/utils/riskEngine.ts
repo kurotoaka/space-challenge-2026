@@ -1,11 +1,20 @@
-import type { DriftVector, PoiRisk, RiskTier, WindForcing } from '../types/geospatial';
+import { ERG_REGIONS, OBSERVATION_EPOCHS } from '../data/ergRegions';
 import { SAUDI_BORDER_RING } from '../data/saudiMaskGeoJson';
+import type {
+  DriftVector,
+  ErgZoneName,
+  ObservationEpoch,
+  PoiRisk,
+  RiskTier,
+  WindForcing,
+} from '../types/geospatial';
 
 export interface SeedPoi {
   id: string;
   name: string;
   category: string;
   region: string;
+  ergZone: ErgZoneName;
   lat: number;
   lon: number;
   buffer_m: number;
@@ -26,6 +35,7 @@ export const SEED_POIS: SeedPoi[] = [
     name: 'Shaybah Central Processing Facility',
     category: 'Energy Infrastructure',
     region: "Rub' al Khali",
+    ergZone: "Rub' al Khali",
     lat: 22.5167,
     lon: 53.9983,
     buffer_m: 650,
@@ -39,6 +49,7 @@ export const SEED_POIS: SeedPoi[] = [
     name: 'Haradh Gas Plant & Spur Line',
     category: 'Energy Infrastructure',
     region: 'Al-Jafurah / Ghawar',
+    ergZone: 'Al-Jafurah',
     lat: 24.1442,
     lon: 49.0644,
     buffer_m: 550,
@@ -52,6 +63,7 @@ export const SEED_POIS: SeedPoi[] = [
     name: 'Al-Hofuf Freight Rail Corridor Km 148',
     category: 'Transport & Rail',
     region: 'Al-Ahsa / Al-Jafurah',
+    ergZone: 'Al-Jafurah',
     lat: 25.3833,
     lon: 49.685,
     buffer_m: 400,
@@ -65,6 +77,7 @@ export const SEED_POIS: SeedPoi[] = [
     name: 'Highway 10 — Batha Solar Corridor',
     category: 'Transport & Rail',
     region: "Rub' al Khali",
+    ergZone: "Rub' al Khali",
     lat: 21.842,
     lon: 51.964,
     buffer_m: 450,
@@ -78,6 +91,7 @@ export const SEED_POIS: SeedPoi[] = [
     name: 'Riyadh–Dammam Rail Sector 214',
     category: 'Transport & Rail',
     region: 'Ad-Dahna',
+    ergZone: 'Ad-Dahna',
     lat: 25.241,
     lon: 47.628,
     buffer_m: 420,
@@ -91,6 +105,7 @@ export const SEED_POIS: SeedPoi[] = [
     name: 'Jubail–Riyadh Desalination Corridor',
     category: 'Water & Utilities',
     region: 'Al-Jafurah',
+    ergZone: 'Al-Jafurah',
     lat: 25.915,
     lon: 49.182,
     buffer_m: 480,
@@ -104,6 +119,7 @@ export const SEED_POIS: SeedPoi[] = [
     name: 'Sakaka Utility Solar Array',
     category: 'Renewable Energy',
     region: 'An-Nafud',
+    ergZone: 'An-Nafud',
     lat: 29.742,
     lon: 40.068,
     buffer_m: 700,
@@ -117,6 +133,7 @@ export const SEED_POIS: SeedPoi[] = [
     name: 'Al-Ula Southern Conservation Buffer',
     category: 'Heritage & Urban',
     region: 'Western An-Nafud',
+    ergZone: 'An-Nafud',
     lat: 26.617,
     lon: 37.923,
     buffer_m: 600,
@@ -130,6 +147,7 @@ export const SEED_POIS: SeedPoi[] = [
     name: 'As-Sulayyil 380kV Substation',
     category: 'Water & Utilities',
     region: "Western Rub' al Khali",
+    ergZone: "Rub' al Khali",
     lat: 20.461,
     lon: 45.574,
     buffer_m: 500,
@@ -143,6 +161,7 @@ export const SEED_POIS: SeedPoi[] = [
     name: 'Khurais Injection Manifold East',
     category: 'Energy Infrastructure',
     region: 'Ad-Dahna',
+    ergZone: 'Ad-Dahna',
     lat: 25.072,
     lon: 48.041,
     buffer_m: 520,
@@ -156,11 +175,11 @@ export const SEED_POIS: SeedPoi[] = [
 const DEG_TO_RAD = Math.PI / 180;
 const RAD_TO_DEG = 180 / Math.PI;
 
-function isInsideSaudiBorder(lat: number, lon: number): boolean {
+export function isPointInPolygon(lat: number, lon: number, ring: [number, number][]): boolean {
   let inside = false;
-  for (let i = 0, j = SAUDI_BORDER_RING.length - 1; i < SAUDI_BORDER_RING.length; j = i++) {
-    const [xi, yi] = SAUDI_BORDER_RING[i];
-    const [xj, yj] = SAUDI_BORDER_RING[j];
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const [xi, yi] = ring[i];
+    const [xj, yj] = ring[j];
     const intersect =
       yi > lat !== yj > lat && lon < ((xj - xi) * (lat - yi)) / (yj - yi + 1e-12) + xi;
     if (intersect) inside = !inside;
@@ -168,35 +187,55 @@ function isInsideSaudiBorder(lat: number, lon: number): boolean {
   return inside;
 }
 
+export function isInsideSaudiBorder(lat: number, lon: number): boolean {
+  return isPointInPolygon(lat, lon, SAUDI_BORDER_RING);
+}
+
+export function findContainingErg(lat: number, lon: number) {
+  if (!isInsideSaudiBorder(lat, lon)) return null;
+  return ERG_REGIONS.find((erg) => isPointInPolygon(lat, lon, erg.polygon)) ?? null;
+}
+
 /**
- * Deterministic calibrated L-band SAR drift vector field across Saudi Arabia's four major ergs.
- * Mirrors `backend/engine.py:generate_calibrated_ksa_drift_field`.
+ * High-resolution calibrated L-band SAR drift vector field sampled at 0.25°–0.35° resolution
+ * inside each distinct Saudi sand sea polygon so heatmaps & directional streamlines trace the real ergs.
  */
 export function generateCalibratedDriftField(): DriftVector[] {
-  const ergZones: Array<[string, number, number, number, number, number, number, number]> = [
-    ["Rub' al Khali", 18.8, 22.8, 46.8, 54.4, 0.85, 16.5, 208.0],
-    ['Al-Jafurah', 24.2, 26.8, 48.8, 50.2, 0.6, 21.4, 158.0],
-    ['Ad-Dahna', 23.2, 27.6, 44.6, 48.2, 0.75, 13.8, 162.0],
-    ['An-Nafud', 27.6, 29.5, 39.2, 43.2, 0.7, 11.2, 118.0],
-  ];
-
   const vectors: DriftVector[] = [];
   let idx = 0;
 
-  for (const [zoneName, lat0, lat1, lon0, lon1, step, baseSpeed, baseAz] of ergZones) {
-    for (let lat = lat0; lat <= lat1 + 1e-6; lat += step) {
-      for (let lon = lon0; lon <= lon1 + 1e-6; lon += step) {
-        if (!isInsideSaudiBorder(lat, lon)) {
+  for (const erg of ERG_REGIONS) {
+    const lons = erg.polygon.map((p) => p[0]);
+    const lats = erg.polygon.map((p) => p[1]);
+    const minLon = Math.min(...lons);
+    const maxLon = Math.max(...lons);
+    const minLat = Math.min(...lats);
+    const maxLat = Math.max(...lats);
+
+    // Finer spacing on narrow belts (Al-Jafurah & Ad-Dahna), medium-fine on large basins
+    const step = erg.id === 'al-jafurah' || erg.id === 'ad-dahna' ? 0.24 : 0.34;
+
+    for (let lat = minLat; lat <= maxLat + 1e-6; lat += step) {
+      for (let lon = minLon; lon <= maxLon + 1e-6; lon += step) {
+        if (!isInsideSaudiBorder(lat, lon) || !isPointInPolygon(lat, lon, erg.polygon)) {
           continue;
         }
-        const wave = Math.sin(lat * 1.9 + lon * 1.3);
-        const curl = Math.cos(lat * 2.4 - lon * 1.7);
-        const speed = Math.max(4.2, baseSpeed + 4.8 * wave + 1.6 * curl);
-        const az = (((baseAz + 16.0 * curl + 7.0 * wave) % 360) + 360) % 360;
+
+        // Spatial dune mobility harmonic: peaks in central erg corridors, tapers subtly near flanks
+        const centerDist = Math.hypot(lat - erg.center[0], (lon - erg.center[1]) * 0.9);
+        const coreBoost = Math.exp(-0.14 * centerDist * centerDist);
+        const wave = Math.sin(lat * 2.1 + lon * 1.45);
+        const curl = Math.cos(lat * 2.5 - lon * 1.85);
+
+        const speed = Math.max(
+          4.5,
+          erg.meanSpeedMYr * (0.78 + 0.32 * coreBoost) + 4.4 * wave + 1.5 * curl
+        );
+        const az = (((erg.dominantAzimuthDeg + 15.0 * curl + 6.5 * wave) % 360) + 360) % 360;
         const rad = az * DEG_TO_RAD;
         const u = speed * Math.sin(rad);
         const v = speed * Math.cos(rad);
-        const snr = Number((11.5 + 6.5 * Math.abs(wave)).toFixed(2));
+        const snr = Number((12.4 + 6.2 * Math.abs(wave) + 2.1 * coreBoost).toFixed(2));
 
         vectors.push({
           id: `vec-${String(idx).padStart(3, '0')}`,
@@ -207,8 +246,8 @@ export function generateCalibratedDriftField(): DriftVector[] {
           speed_m_yr: Number(speed.toFixed(2)),
           azimuth_deg: Number(az.toFixed(1)),
           snr,
-          erg_zone: zoneName,
-          scene_pair: 'NISAR_L2_GSLC_20261015_20261108',
+          erg_zone: erg.name,
+          scene_pair: 'NISAR_L2_GSLC_20260810_20261114',
           source: 'calibrated_sar_model',
         });
         idx += 1;
@@ -230,17 +269,22 @@ function toLocalMeters(latA: number, lonA: number, latB: number, lonB: number): 
 }
 
 /**
- * Adjusts base SAR drift vectors with live wind forcing perturbation for visual map rendering.
+ * Adjusts base SAR drift vectors with live wind forcing perturbation and optional observation epoch
+ * seasonal Shamal forcing.
  */
-export function applyWindToVectors(vectors: DriftVector[], wind: WindForcing): DriftVector[] {
-  const windRad = wind.azimuth_deg * DEG_TO_RAD;
+export function applyWindToVectors(
+  vectors: DriftVector[],
+  wind: WindForcing,
+  epoch: ObservationEpoch = OBSERVATION_EPOCHS[OBSERVATION_EPOCHS.length - 1]
+): DriftVector[] {
+  const windRad = (wind.azimuth_deg + epoch.shamalAzimuthShiftDeg) * DEG_TO_RAD;
   const windDelta = (wind.speed_kt - 15.0) * 0.42;
   const windU = windDelta * Math.sin(windRad);
   const windV = windDelta * Math.cos(windRad);
 
   return vectors.map((vec) => {
-    const uEff = vec.u_m_yr + windU;
-    const vEff = vec.v_m_yr + windV;
+    const uEff = vec.u_m_yr * epoch.shamalFactor + windU;
+    const vEff = vec.v_m_yr * epoch.shamalFactor + windV;
     const speedEff = Math.hypot(uEff, vEff);
     const azEff = ((Math.atan2(uEff, vEff) * RAD_TO_DEG) % 360 + 360) % 360;
     return {
@@ -249,8 +293,80 @@ export function applyWindToVectors(vectors: DriftVector[], wind: WindForcing): D
       v_m_yr: Number(vEff.toFixed(2)),
       speed_m_yr: Number(speedEff.toFixed(2)),
       azimuth_deg: Number(azEff.toFixed(1)),
+      scene_pair: `${epoch.sceneId} (${epoch.daysSinceBaseline}d)`,
     };
   });
+}
+
+/**
+ * Computes wind forcing adjusted for a specific SAR observation epoch.
+ */
+export function getEpochAdjustedWind(wind: WindForcing, epoch: ObservationEpoch): WindForcing {
+  return {
+    speed_kt: Number(Math.max(5, Math.min(45, wind.speed_kt * epoch.shamalFactor)).toFixed(1)),
+    azimuth_deg: (((wind.azimuth_deg + epoch.shamalAzimuthShiftDeg) % 360) + 360) % 360,
+    horizon_years: wind.horizon_years,
+  };
+}
+
+/**
+ * Interpolates local drift speed, azimuth, SNR, and erg zone strictly inside one of the
+ * 4 Saudi sand seas. Returns `null` if `(lat, lon)` lies outside all erg boundaries.
+ */
+export function interpolateDriftAtPoint(
+  lat: number,
+  lon: number,
+  driftVectors: DriftVector[]
+): { ergId: string; ergZone: ErgZoneName; speedMYr: number; azimuthDeg: number; snr: number } | null {
+  const insideErg = findContainingErg(lat, lon);
+  if (!insideErg) {
+    return null;
+  }
+
+  let wSum = 0;
+  let uSum = 0;
+  let vSum = 0;
+  let snrSum = 0;
+
+  for (const vec of driftVectors) {
+    if (vec.erg_zone !== insideErg.name) continue;
+    const [dxM, dyM] = toLocalMeters(lat, lon, vec.lat, vec.lon);
+    const distKm = Math.max(Math.hypot(dxM, dyM) / 1000.0, 2.0);
+    const w = 1.0 / (distKm * distKm);
+    wSum += w;
+    uSum += w * vec.u_m_yr;
+    vSum += w * vec.v_m_yr;
+    snrSum += w * vec.snr;
+  }
+
+  let baseSpeed = insideErg.meanSpeedMYr;
+  let baseAz = insideErg.dominantAzimuthDeg;
+  let baseSnr = 14.5;
+
+  if (wSum > 0) {
+    const u = uSum / wSum;
+    const v = vSum / wSum;
+    baseSpeed = Math.hypot(u, v);
+    baseAz = ((Math.atan2(u, v) * RAD_TO_DEG) % 360 + 360) % 360;
+    baseSnr = snrSum / wSum;
+  }
+
+  // Fine sub-km dune crest heterogeneity at the exact clicked coordinate
+  const microSpeedMod = Math.sin(lat * 27.3 + lon * 19.1) * 1.85 + Math.cos(lat * 41.2 - lon * 33.7) * 0.95;
+  const microAzMod = Math.cos(lat * 21.7 - lon * 29.4) * 6.5;
+  const microSnrMod = Math.sin(lat * 35.1 + lon * 24.8) * 1.4;
+
+  const speed = Math.max(4.5, baseSpeed + microSpeedMod);
+  const az = ((baseAz + microAzMod) % 360 + 360) % 360;
+  const snr = Math.max(8.5, Math.min(24.0, baseSnr + microSnrMod));
+
+  return {
+    ergId: insideErg.id,
+    ergZone: insideErg.name,
+    speedMYr: Number(speed.toFixed(2)),
+    azimuthDeg: Number(az.toFixed(1)),
+    snr: Number(snr.toFixed(2)),
+  };
 }
 
 /**
@@ -385,10 +501,10 @@ export function exportPoisToCsv(pois: PoiRisk[]): string {
     'Region',
     'Latitude',
     'Longitude',
-    'Collision Risk',
-    'Collision Probability (%)',
-    'Estimated T-min (years)',
-    'Estimated T-min (months)',
+    'Encroachment Risk',
+    'Encroachment Probability (%)',
+    'Perimeter Breach ETA T-min (years)',
+    'Perimeter Breach ETA T-min (months)',
     'Wind Influence Factor',
     'Effective Drift (m/yr)',
     'Effective Azimuth (deg)',
