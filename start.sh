@@ -1,9 +1,17 @@
-#!/usr/bin/env bash
+#!/bin/bash
 set -u
 
-cd "$(dirname "$0")"
+cd "$(dirname "$0")" || exit 1
 
-# Stop any previous instances cleanly
+# Load optional .env (e.g. EARTHDATA_TOKEN) into environment
+if [ -f ".env" ]; then
+  set -a
+  # shellcheck disable=SC1091
+  . ./.env
+  set +a
+fi
+
+# Stop any previous instances cleanly after Ctrl+C or crashes
 pkill -f "uvicorn main:app" >/dev/null 2>&1 || true
 pkill -f "vite --port=3000" >/dev/null 2>&1 || true
 sleep 1
@@ -17,7 +25,10 @@ fi
 uvicorn main:app --app-dir backend --host 0.0.0.0 --port 8000 --workers 1 > uvicorn.log 2>&1 &
 UVICORN_PID=$!
 
-trap 'kill "$UVICORN_PID" >/dev/null 2>&1 || true' EXIT
+cleanup() {
+  kill "$UVICORN_PID" >/dev/null 2>&1 || true
+}
+trap cleanup INT TERM EXIT
 
 sleep 2
 if curl -fsS http://localhost:8000/api/health >/dev/null 2>&1; then
