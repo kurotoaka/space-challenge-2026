@@ -88,20 +88,39 @@ def token_status() -> dict[str, Any]:
                 "active_source": "calibrated_sar_model",
                 "detail": "EARTHDATA_TOKEN is present, but NASA Earthdata login rejected it (expired or invalid).",
             }
-        granules = earthaccess.search_data(
-            short_name="NISAR_L2_GSLC",
+        v1 = earthaccess.search_data(
+            short_name="NISAR_L2_GSLC_V1",
             bounding_box=(34.50, 16.30, 55.70, 32.20),
             count=2,
         )
+        prov = earthaccess.search_data(
+            short_name="NISAR_L2_GSLC_PROVISIONAL_V1",
+            bounding_box=(34.50, 16.30, 55.70, 32.20),
+            count=2,
+        )
+        beta = earthaccess.search_data(
+            short_name="NISAR_L2_GSLC_BETA_V1",
+            bounding_box=(34.50, 16.30, 55.70, 32.20),
+            count=2,
+        )
+        total_sample = len(v1) + len(prov) + len(beta)
         return {
             "token_present": True,
             "earthdata_authenticated": True,
-            "nisar_granules_found": len(granules),
-            "active_source": "nisar_gslc_fft" if len(granules) >= 2 else "calibrated_sar_model",
+            "nisar_granules_found": total_sample,
+            "collections": {
+                "NISAR_L2_GSLC_V1": len(v1),
+                "NISAR_L2_GSLC_PROVISIONAL_V1": len(prov),
+                "NISAR_L2_GSLC_BETA_V1": len(beta),
+            },
+            "active_source": (
+                "nisar_gslc_fft" if any(v.get("source") == "nisar_gslc_fft" for v in _STATE["vectors"]) else "calibrated_sar_model"
+            ),
             "detail": (
-                f"Authenticated with NASA Earthdata; {len(granules)} NISAR_L2_GSLC granules matched KSA bounds."
-                if granules
-                else "Authenticated with NASA Earthdata, but 0 NISAR_L2_GSLC public granules matched yet (fallback active)."
+                f"Authenticated with NASA Earthdata; matched NISAR_L2_GSLC_V1 ({len(v1)}+), "
+                f"PROVISIONAL_V1 ({len(prov)}+), BETA_V1 ({len(beta)}+) granules over KSA."
+                if total_sample > 0
+                else "Authenticated with NASA Earthdata, but 0 NISAR L2 GSLC granules matched KSA bounds."
             ),
         }
     except Exception as exc:

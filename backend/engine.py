@@ -25,7 +25,12 @@ logger = logging.getLogger("dunemarch.engine")
 
 # Saudi Arabia spatial bounding box: (min_lon, min_lat, max_lon, max_lat)
 KSA_BBOX: tuple[float, float, float, float] = (34.50, 16.30, 55.70, 32.20)
-NISAR_SHORT_NAMES: tuple[str, ...] = ("NISAR_L2_GSLC", "NISAR_L2_GSLC_V1")
+# Real NASA ASF DAAC collection short names in CMR (bare "NISAR_L2_GSLC" does not exist)
+NISAR_SHORT_NAMES: tuple[str, ...] = (
+    "NISAR_L2_GSLC_V1",
+    "NISAR_L2_GSLC_PROVISIONAL_V1",
+    "NISAR_L2_GSLC_BETA_V1",
+)
 SCIENCE_PHASE_START = "2025-11-28T00:00:00Z"
 
 
@@ -135,29 +140,74 @@ def _run_dask_fft_on_xarray_pair(
 
     min_lon, min_lat, max_lon, max_lat = subset_bbox
 
-    # Subset strictly in memory/lazy graph before pulling chunks over HTTPS/S3
-    sub0 = ds_t0.sel(x=slice(min_lon, max_lon), y=slice(max_lat, min_lat))
-    sub1 = ds_t1.sel(x=slice(min_lon, max_lon), y=slice(max_lat, min_lat))
+    x_dim = "xCoordinates" if "xCoordinates" in ds_t0.dims or "xCoordinates" in ds_t0.coords else "x"
+    y_dim = "yCoordinates" if "yCoordinates" in ds_t0.dims or "yCoordinates" in ds_t0.coords else "y"
 
-    amp0 = np.abs(sub0["HH"]) if "HH" in sub0 else sub0[list(sub0.data_vars)[0]]
-    amp1 = np.abs(sub1["HH"]) if "HH" in sub1 else sub1[list(sub1.data_vars)[0]]
+    # Real NISAR L2 GSLC grids use projected UTM meters (|coord| > 360) + scalar EPSG `projection`
+    to_lonlat = None
+    x_vals = np.asarray(ds_t0[x_dim].values)
+    is_projected_meters = bool(x_vals.size > 0 and np.max(np.abs(x_vals)) > 360.0)
+    if is_projected_meters:
+        try:
+            from pyproj import Transformer
 
-    ny, nx = amp0.shape[-2], amp0.shape[-1]
+            epsg = 32639
+            if "projection" in ds_t0:
+                proj_raw = int(np.asarray(ds_t0["projection"].values).item())
+                if 1000 <= proj_raw <= 99999:
+                    epsg = proj_raw
+            to_utm = Transformer.from_crs("EPSG:4326", f"EPSG:{epsg}", always_xy=True)
+            to_lonlat = Transformer.from_crs(f"EPSG:{epsg}", "EPSG:4326", always_xy=True)
+            x0, y0 = to_utm.transform(min_lon, min_lat)
+            x1, y1 = to_utm.transform(max_lon, max_lat)
+            sel_x_min, sel_x_max = min(x0, x1), max(x0, x1)
+            sel_y_min, sel_y_max = min(y0, y1), max(y0, y1)
+        except Exception:
+            sel_x_min, sel_x_max, sel_y_min, sel_y_max = min_lon, max_lon, min_lat, max_lat
+    else:
+        sel_x_min, sel_x_max, sel_y_min, sel_y_max = min_lon, max_lon, min_lat, max_lat
+
+    # Handle ascending or descending y-axis cleanly
+    y0_arr = np.asarray(ds_t0[y_dim].values)
+    y_descending = bool(y0_arr.size >= 2 and y0_arr[0] > y0_arr[-1])
+    y_slice = slice(sel_y_max, sel_y_min) if y_descending else slice(sel_y_min, sel_y_max)
+
+    sub0 = ds_t0.sel({x_dim: slice(sel_x_min, sel_x_max), y_dim: y_slice})
+    sub1 = ds_t1.sel({x_dim: slice(sel_x_min, sel_x_max), y_dim: y_slice})
+
+    # Choose common polarization channel across both granules (HH preferred, else VV/HV/first)
+    shared_vars = [
+        ch
+        for ch in ("HH", "VV", "HV", "VH")
+        if ch in sub0.data_vars and ch in sub1.data_vars
+    ]
+    ch0 = shared_vars[0] if shared_vars else list(sub0.data_vars)[0]
+    ch1 = shared_vars[0] if shared_vars else list(sub1.data_vars)[0]
+
+    amp0 = np.abs(sub0[ch0])
+    amp1 = np.abs(sub1[ch1])
+
+    ny = min(amp0.shape[-2], amp1.shape[-2])
+    nx = min(amp0.shape[-1], amp1.shape[-1])
     tasks = []
     coords = []
 
     for r in range(0, ny - patch_size + 1, patch_size):
         for c in range(0, nx - patch_size + 1, patch_size):
-            p0_delayed = amp0.isel(y=slice(r, r + patch_size), x=slice(c, c + patch_size)).data
-            p1_delayed = amp1.isel(y=slice(r, r + patch_size), x=slice(c, c + patch_size)).data
+            p0_delayed = amp0.isel({y_dim: slice(r, r + patch_size), x_dim: slice(c, c + patch_size)}).data
+            p1_delayed = amp1.isel({y_dim: slice(r, r + patch_size), x_dim: slice(c, c + patch_size)}).data
             tasks.append(
                 dask.delayed(fft_cross_correlate_patch)(
                     p0_delayed, p1_delayed, pixel_spacing_m, delta_days
                 )
             )
-            center_lat = float(amp0["y"].isel(y=r + patch_size // 2).values)
-            center_lon = float(amp0["x"].isel(x=c + patch_size // 2).values)
-            coords.append((center_lat, center_lon))
+            cx_val = float(amp0[x_dim].isel({x_dim: c + patch_size // 2}).values)
+            cy_val = float(amp0[y_dim].isel({y_dim: r + patch_size // 2}).values)
+            if to_lonlat is not None:
+                center_lon, center_lat = to_lonlat.transform(cx_val, cy_val)
+            else:
+                center_lat, center_lon = cy_val, cx_val
+            coords.append((float(center_lat), float(center_lon)))
 
     if not tasks:
         return []
@@ -231,42 +281,70 @@ def _extract_granule_datetime(granule: Any) -> datetime | None:
     return None
 
 
+def _extract_track_frame(granule: Any) -> str | None:
+    """Extract NISAR `<track>_<dir>_<frame>` identifier so repeat-pass pairs share geometry."""
+    try:
+        meta = granule.get("meta", {}) if isinstance(granule, dict) else {}
+        native_id = str(meta.get("native-id", ""))
+        m = re.search(r"NISAR_L2_PR_GSLC_\d{3}_(\d{3}_[AD]_\d{3})", native_id)
+        if m:
+            return m.group(1)
+    except Exception:
+        pass
+    return None
+
+
 def _select_valid_granule_pair(granules: list[Any]) -> tuple[Any, Any, float, bool]:
     """
-    Pick two chronologically ordered repeat-pass granules separated by at least 6 days.
-    Computes exact `delta_days` so bridged outages (such as NASA's Jul 27 - Aug 10, 2026 gap)
-    divide by real elapsed days rather than assuming a fixed 12-day interval.
+    Pick two chronologically ordered repeat-pass granules on the same Track/Frame
+    separated by at least 6 days. Computes exact `delta_days` so bridged outages
+    (such as NASA's Jul 27 - Aug 10, 2026 gap) divide by real elapsed days rather than
+    assuming a fixed 12-day interval.
     """
-    stamped: list[tuple[datetime, Any]] = []
+    stamped: list[tuple[datetime, str | None, Any]] = []
     for g in granules:
         dt = _extract_granule_datetime(g)
         if dt is not None:
-            stamped.append((dt, g))
+            stamped.append((dt, _extract_track_frame(g), g))
 
     if len(stamped) < 2:
         return granules[0], granules[1], 12.0, False
 
+    # Prefer pairing scenes with identical Track_Dir_Frame for spatial overlap
+    by_frame: dict[str, list[tuple[datetime, Any]]] = {}
+    for dt, tf, g in stamped:
+        if tf:
+            by_frame.setdefault(tf, []).append((dt, g))
+
+    for group in by_frame.values():
+        if len(group) >= 2:
+            group.sort(key=lambda item: item[0])
+            t0, g0 = group[0]
+            for t1, g1 in group[1:]:
+                delta_days = (t1 - t0).total_seconds() / 86400.0
+                if delta_days >= 6.0:
+                    return g0, g1, round(delta_days, 3), delta_days > 14.5
+
     stamped.sort(key=lambda item: item[0])
-    t0, g0 = stamped[0]
-    for t1, g1 in stamped[1:]:
+    t0, _, g0 = stamped[0]
+    for t1, _, g1 in stamped[1:]:
         delta_days = (t1 - t0).total_seconds() / 86400.0
         if delta_days >= 6.0:
-            gap_bridged = delta_days > 14.5
-            return g0, g1, round(delta_days, 3), gap_bridged
+            return g0, g1, round(delta_days, 3), delta_days > 14.5
 
-    t1, g1 = stamped[-1]
+    t1, _, g1 = stamped[-1]
     delta_days = max((t1 - t0).total_seconds() / 86400.0, 12.0)
     return g0, g1, round(delta_days, 3), delta_days > 14.5
 
 
 def fetch_nisar_ksa_vectors(
     subset_bbox: tuple[float, float, float, float] = (49.5, 19.5, 54.8, 23.5),
-    max_granules: int = 6,
+    max_granules: int = 24,
 ) -> list[DriftVector]:
     """
     Search NASA Earthdata via `earthaccess` for NISAR Level-2 GSLC scenes intersecting Saudi Arabia
-    (from Science Phase 2025-11-28 onward). Streams subsets lazily via xarray + h5netcdf and
-    normalizes 2D FFT drift by exact elapsed acquisition interval `delta_days`.
+    across Validated V1, Provisional V1, and Beta V1 collections (from Science Phase 2025-11-28 onward).
+    Streams subsets lazily via xarray + h5netcdf and normalizes 2D FFT drift by exact `delta_days`.
     """
     token = os.getenv("EARTHDATA_TOKEN")
     if not token:
@@ -284,15 +362,25 @@ def fetch_nisar_ksa_vectors(
 
         granules: list[Any] = []
         now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-        for short_name in NISAR_SHORT_NAMES:
-            granules = earthaccess.search_data(
-                short_name=short_name,
-                bounding_box=KSA_BBOX,
-                temporal=(SCIENCE_PHASE_START, now_iso),
-                count=max(max_granules, 4),
+        for short_name in ("NISAR_L2_GSLC_V1", "NISAR_L2_GSLC_PROVISIONAL_V1"):
+            granules.extend(
+                earthaccess.search_data(
+                    short_name=short_name,
+                    bounding_box=subset_bbox,
+                    temporal=(SCIENCE_PHASE_START, now_iso),
+                    count=max(max_granules // 2, 10),
+                )
             )
-            if len(granules) >= 2:
-                break
+
+        if len(granules) < 2:
+            granules.extend(
+                earthaccess.search_data(
+                    short_name="NISAR_L2_GSLC_BETA_V1",
+                    bounding_box=KSA_BBOX,
+                    temporal=(SCIENCE_PHASE_START, now_iso),
+                    count=10,
+                )
+            )
 
         if len(granules) < 2:
             logger.info("Fewer than 2 NISAR L2 GSLC granules found; using calibrated drift field.")
