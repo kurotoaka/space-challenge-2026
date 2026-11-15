@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { BackendGuideView } from './components/BackendGuideView';
 import { ControlSidebar } from './components/ControlSidebar';
 import { DuneMapStage } from './components/DuneMapStage';
+import { PresentationView } from './components/PresentationView';
 import { RiskMatrixView } from './components/RiskMatrixView';
 import { TopNav } from './components/TopNav';
 import {
@@ -132,6 +133,14 @@ export default function App() {
 
       {activeView === 'matrix' && (
         <RiskMatrixView pois={pois} onInspectOnMap={handleInspectOnMap} />
+      )}
+
+      {activeView === 'deck' && (
+        <PresentationView
+          pois={pois}
+          vectors={vectors}
+          onOpenLiveMap={() => setActiveView('map')}
+        />
       )}
 
       {activeView === 'backend' && (

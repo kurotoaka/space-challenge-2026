@@ -9,16 +9,16 @@ interface BackendGuideViewProps {
   onUpdateApiUrl: (nextUrl: string) => void;
 }
 
-const UBUNTU_COMMANDS = `# 1. Activate existing venv in space-challenge/ and install Python dependencies
+const UBUNTU_COMMANDS = `# 1. Inside space-challenge/ on Ubuntu (works in sh, dash, bash, or PyCharm SSH terminal)
 cd ~/space-challenge
-source venv/bin/activate
-pip install --upgrade pip && pip install -r backend/requirements.txt
+. venv/bin/activate
+./venv/bin/pip install --upgrade pip && ./venv/bin/pip install -r backend/requirements.txt
 
 # 2. Export NASA Earthdata bearer token (streams subsets in memory, zero large disk writes)
 export EARTHDATA_TOKEN="your_earthdata_bearer_token"
 
-# 3. Launch FastAPI backend + React frontend simultaneously from space-challenge/
-uvicorn main:app --app-dir backend --host 0.0.0.0 --port 8000 --workers 1 &
+# 3. Launch FastAPI backend + React frontend simultaneously
+./venv/bin/uvicorn main:app --app-dir backend --host 0.0.0.0 --port 8000 --workers 1 &
 npm install && VITE_API_BASE_URL=http://localhost:8000 npm run dev`;
 
 export function BackendGuideView({

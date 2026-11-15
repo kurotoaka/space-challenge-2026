@@ -9,6 +9,7 @@ interface TopNavProps {
 const NAV_ITEMS: Array<{ id: AppView; label: string }> = [
   { id: 'map', label: 'Map Console' },
   { id: 'matrix', label: 'Risk Matrix' },
+  { id: 'deck', label: 'Pitch Deck' },
   { id: 'backend', label: 'EC2 & FastAPI' },
 ];
 

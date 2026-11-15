@@ -74,3 +74,17 @@
   background: rgba(255, 255, 255, 0.85) !important;
   color: #475569 !important;
 }
+
+@media print {
+  @page {
+    size: landscape;
+    margin: 0.4in;
+  }
+  header,
+  .no-print {
+    display: none !important;
+  }
+  body {
+    background: #ffffff !important;
+  }
+}

@@ -2,7 +2,7 @@ export type RiskTier = 'High' | 'Med' | 'Low';
 
 export type VisualizationMode = 'vectors' | 'heatmap' | 'combined';
 
-export type AppView = 'map' | 'matrix' | 'backend';
+export type AppView = 'map' | 'matrix' | 'backend' | 'deck';
 
 export type DataSourceMode = 'fastapi' | 'local_model';
 
