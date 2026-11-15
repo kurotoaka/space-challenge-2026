@@ -59,7 +59,7 @@ function addSlideHeader(
   });
 
   // Footer
-  slide.addText('RimalTrack · Saudi Dune Drift & Risk Console', {
+  slide.addText('DuneMarch · Saudi Dune Drift & Risk Console', {
     x: 0.7,
     y: 7.0,
     w: 8.0,
@@ -86,8 +86,8 @@ export function buildPresentationPptx(
 ): PptxGenJS {
   const pptx = new PptxGenJS();
   pptx.layout = 'LAYOUT_WIDE';
-  pptx.author = 'RimalTrack';
-  pptx.title = 'RimalTrack — Saudi Dune Drift & Risk Assessment';
+  pptx.author = 'DuneMarch';
+  pptx.title = 'DuneMarch — Saudi Dune Drift & Risk Assessment';
   pptx.subject = 'NISAR L2 GSLC Dune Drift Tracking & Collision Risk';
 
   const highPois = pois.filter((p) => p.collision_risk === 'High');
@@ -113,7 +113,7 @@ export function buildPresentationPptx(
     bold: true,
     color: COLORS.blue,
   });
-  s1.addText('RimalTrack: SAR-Driven Dune Drift\n& Infrastructure Risk Assessment', {
+  s1.addText('DuneMarch: SAR-Driven Dune Drift\n& Infrastructure Risk Assessment', {
     x: 0.9,
     y: 1.85,
     w: 11.2,
@@ -634,5 +634,5 @@ export async function downloadPresentationPptx(
   vectors: DriftVector[]
 ): Promise<void> {
   const pptx = buildPresentationPptx(pois, vectors);
-  await pptx.writeFile({ fileName: 'RimalTrack_Demo.pptx' });
+  await pptx.writeFile({ fileName: 'DuneMarch_Demo.pptx' });
 }

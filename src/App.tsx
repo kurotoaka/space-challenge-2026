@@ -77,7 +77,7 @@ export default function App() {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `rimaltrack-ksa-dune-risk-${wind.speed_kt}kt.csv`;
+    link.download = `dunemarch-ksa-dune-risk-${wind.speed_kt}kt.csv`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);

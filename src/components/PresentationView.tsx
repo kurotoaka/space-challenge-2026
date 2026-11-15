@@ -143,7 +143,7 @@ export function PresentationView({
               01. Hackathon Prototype · Kingdom of Saudi Arabia
             </div>
             <h1 className="text-3xl md:text-5xl font-bold tracking-tight text-slate-900 max-w-3xl text-balance leading-tight">
-              RimalTrack: SAR-Driven Dune Drift &amp; Infrastructure Risk Assessment
+              DuneMarch: SAR-Driven Dune Drift &amp; Infrastructure Risk Assessment
             </h1>
             <p className="text-base md:text-lg text-slate-600 max-w-2xl leading-relaxed">
               Lazy-streaming NISAR Level-2 GSLC radar analysis, wind-adjusted aeolian collision
@@ -431,7 +431,7 @@ export function PresentationView({
 
         {/* Slide footer */}
         <div className="pt-4 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
-          <span>RimalTrack · Saudi Dune Drift &amp; Risk Console</span>
+          <span>DuneMarch · Saudi Dune Drift &amp; Risk Console</span>
           <span className="font-mono tabular-nums">
             {slideIndex + 1} / {totalSlides}
           </span>

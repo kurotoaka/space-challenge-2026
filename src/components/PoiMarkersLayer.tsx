@@ -110,7 +110,7 @@ export function PoiMarkersLayer({
               click: () => onSelectPoi(poi.id),
             }}
           >
-            <Popup className="rimal-popup" maxWidth={350}>
+            <Popup className="dunemarch-popup" maxWidth={350}>
               <div className="p-3.5 text-slate-900" data-testid={`poi-popup-${poi.id}`}>
                 <div className="pr-5">
                   <div className="text-[11px] font-medium text-slate-500">

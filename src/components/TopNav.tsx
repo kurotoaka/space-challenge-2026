@@ -25,7 +25,7 @@ export function TopNav({ activeView, onSelectView, onExportCsv }: TopNavProps) {
         }}
         className="text-sm sm:text-base md:text-lg font-bold tracking-tight text-slate-900 whitespace-nowrap shrink-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 rounded"
       >
-        RimalTrack
+        DuneMarch
       </a>
 
       {/* Zone 2: Concise single-line navigation links */}

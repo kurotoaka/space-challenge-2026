@@ -33,7 +33,7 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(
-    title="RimalTrack Dune Drift API",
+    title="DuneMarch Dune Drift API",
     version="1.0.0",
     description="NISAR L2 GSLC dune drift velocity vectors and Saudi POI collision risk telemetry.",
     lifespan=lifespan,

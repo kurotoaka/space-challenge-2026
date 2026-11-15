@@ -20,7 +20,7 @@ os.environ.setdefault("MKL_NUM_THREADS", "1")
 
 import numpy as np
 
-logger = logging.getLogger("rimaltrack.engine")
+logger = logging.getLogger("dunemarch.engine")
 
 # Saudi Arabia spatial bounding box: (min_lon, min_lat, max_lon, max_lat)
 KSA_BBOX: tuple[float, float, float, float] = (34.50, 16.30, 55.70, 32.20)

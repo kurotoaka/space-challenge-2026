@@ -6,8 +6,8 @@ import {
   generateCalibratedDriftField,
 } from '../utils/riskEngine';
 
-const STORAGE_KEY = 'rimaltrack_fastapi_url';
-const ENABLED_KEY = 'rimaltrack_fastapi_enabled';
+const STORAGE_KEY = 'dunemarch_fastapi_url';
+const ENABLED_KEY = 'dunemarch_fastapi_enabled';
 
 export function isRemoteFastApiEnabled(): boolean {
   const envUrl = import.meta.env.VITE_API_BASE_URL as string | undefined;

@@ -14,7 +14,7 @@ async function main() {
 
   const outDir = path.resolve(process.cwd(), 'public');
   mkdirSync(outDir, { recursive: true });
-  const outFile = path.join(outDir, 'RimalTrack_Demo.pptx');
+  const outFile = path.join(outDir, 'DuneMarch_Demo.pptx');
   await pptx.writeFile({ fileName: outFile });
   console.log(`Generated ${outFile} (${pois.length} POIs, ${vectors.length} vectors)`);
 }
